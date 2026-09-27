@@ -1,286 +1,107 @@
-# id-response-evaluator
-Evaluating whether LLMs can reliably replace human semantic correctness judgments for open-ended comprehension responses in evidence-based instruction for students with intellectual disabilities.
+# 한국어 읽기평가 연구용 프로토타입 v0.2
 
-## Overview
+아동부터 성인까지의 한국어 읽기평가 흐름을 시험하는 웹 프로토타입입니다.
 
-This project investigates whether a Large Language Model (LLM) can reliably replace human judgment when evaluating open-ended comprehension responses from students with intellectual disabilities.
+현재 가장 자세히 구현된 핵심 모듈은 다음 두 가지입니다.
 
-In existing shared-text reading interventions, students listen to or read a passage, answer comprehension questions, and receive progressively more explicit support when their answers are incorrect.
+- 단어 해독: 실제단어·비단어 후보를 읽고 녹음한 뒤 사람이 오류를 판정합니다.
+- 읽기 유창성: 짧은 글을 낭독하고 정확성·시간·오류를 사람이 기록합니다.
 
-Previous research has shown that **least-to-most prompting** is an evidence-based instructional strategy for supporting comprehension in students with intellectual disabilities. However, when students respond freely rather than selecting from predefined choices, a teacher or researcher still needs to determine whether the student's response is semantically correct.
+> 이 프로그램은 연구용 시제품입니다. 난독증 진단, 표준점수, 백분위 또는 전문가 검사와 같은 판정을 제공하지 않습니다.
 
-This project focuses on automating that specific judgment.
+## 바로 실행하기
 
-The LLM does **not** decide how to teach the student or generate its own instructional strategy.
+별도 설치나 빌드가 필요 없는 정적 웹앱입니다.
 
-Instead:
+1. 저장소를 내려받습니다.
+2. 저장소 폴더에서 간단한 로컬 서버를 실행합니다.
 
-```text
-Student response
-→ Semantic correctness evaluation
-→ CORRECT / INCORRECT
-→ Deterministic instructional protocol
+```bash
+python3 -m http.server 8080
 ```
 
-The instructional protocol itself remains fixed based on existing evidence-based practices.
+3. 브라우저에서 <http://localhost:8080>을 엽니다.
 
----
+마이크 기능은 보안상 `localhost` 또는 HTTPS 주소에서 실행해야 합니다. HTML 파일을 더블클릭해 `file://`로 열면 브라우저에 따라 마이크가 작동하지 않을 수 있습니다.
 
-## Motivation
+## GitHub Pages로 공개하기
 
-Providing a text through read-aloud or text-to-speech does not guarantee that a student understands its meaning.
+1. GitHub에서 새 저장소를 만듭니다.
+2. 이 폴더 안의 파일 전체를 저장소 최상위에 올립니다.
+3. 저장소의 **Settings → Pages**로 이동합니다.
+4. **Deploy from a branch**, `main`, `/ (root)`를 선택해 저장합니다.
+5. 생성된 HTTPS 주소로 접속합니다.
 
-Shared-text reading research has therefore combined text access with comprehension questions and structured prompting.
+GitHub Pages는 프로토타입을 보여주고 한 기기에서 시험하는 용도에는 적합합니다. 여러 기기에서 연구자료를 모으려면 별도의 서버와 접근 권한 관리가 필요합니다.
 
-A typical interaction follows this pattern:
+## 현재 가능한 것
 
-```text
-Present passage
-→ Ask comprehension question
-→ Student responds
-→ Determine whether response is correct
-→ Provide next instructional action
-```
+- 참여자 코드와 연령 구간 입력
+- 4초 마이크 점검과 임시 음질 표시
+- 연습 항목과 본검사 항목 구분
+- 단어 해독 후보 16개, 유창성 지문 2개
+- 녹음, 다시 녹음, 시작·종료 시각 기록
+- 채점자 A와 B의 독립 채점
+- 채점 일치, 합의, 전문가 보류, 음성 무효 상태 구분
+- 원점수와 근거 상태 확인
+- 세션 JSON과 개별 음성 파일 내보내기
 
-Technology has already been used to support text presentation, text-to-speech, navigation, and rereading.
+## 아직 할 수 없는 것
 
-However, for open-ended verbal responses, the semantic correctness judgment has generally remained a human responsibility.
+- 난독증 또는 읽기장애 진단
+- 연령별 표준점수와 백분위
+- 검증된 선별 규칙에 따른 자동 분기
+- 자동 음성인식 결과를 최종 점수로 확정
+- 여러 기기 사이의 자료 공유
+- 검증이 끝난 비단어·지문·동형검사 제공
 
-For example:
-
-```text
-Passage:
-Minsu carried an umbrella to school because it was raining.
-
-Question:
-What did Minsu carry?
-
-Expected answer:
-umbrella
-```
-
-Possible responses include:
+## 폴더 구조
 
 ```text
-"An umbrella."
-→ clearly correct
-
-"The thing you use when it rains."
-→ semantically correct, but lexical matching may fail
-
-"It was raining."
-→ related to the passage, but does not answer the question
-
-"A bag."
-→ incorrect
+.
+├── index.html              # 화면의 뼈대
+├── styles.css              # 색, 글꼴, 배치 같은 모양
+├── app.js                  # 검사 순서, 녹음, 채점, 저장 로직
+├── docs/
+│   └── CODE_DESIGN_KO.md   # 중학생도 읽을 수 있는 코드 설계도
+├── tests/
+│   └── smoke.mjs           # 빠진 핵심 파일·기능이 없는지 확인
+├── package.json            # 점검 명령 정의
+└── .gitignore
 ```
 
-This project investigates whether an LLM can make this judgment reliably enough to support an automated instructional system.
+자세한 구조는 [코드 설계도](docs/CODE_DESIGN_KO.md)를 참고하세요.
 
----
+## 코드 점검하기
 
-## Phase 1 Scope
+Node.js가 설치되어 있다면 다음 명령으로 자바스크립트 문법과 핵심 화면을 확인할 수 있습니다.
 
-Phase 1 intentionally focuses on a narrow task.
-
-Included:
-
-* Students with intellectual disabilities are assumed as the target population.
-* Students are assumed to understand basic `who` and `what` questions.
-* Open-ended verbal or textual responses are considered.
-* Questions are limited to literal factual comprehension.
-* The correct answer must be explicitly available in the passage.
-* Each question should have one primary answer concept.
-
-Excluded from Phase 1:
-
-* Inferential questions such as `why`
-* AAC-based responses
-* Automatic question generation
-* Automatic text simplification
-* LLM-generated instructional hints
-* End-to-end speech recognition evaluation
-* New instructional strategy generation
-
-This narrow scope allows the study to isolate the core technical question:
-
-> Can an LLM reliably determine whether a student's open-ended response expresses the correct meaning?
-
----
-
-## Instructional Protocol
-
-The instructional policy is not generated by the LLM.
-
-A deterministic least-to-most prompting structure will be implemented based on patterns repeatedly reported in shared-text reading research.
-
-Example:
-
-```text
-S0: Independent response
-    CORRECT → Praise and move to next question
-    INCORRECT / NO RESPONSE → S1
-
-S1: Reread relevant passage
-    Ask the same question again
-    CORRECT → Next question
-    INCORRECT → S2
-
-S2: Reread the sentence containing the answer
-    Ask the same question again
-    CORRECT → Next question
-    INCORRECT → S3
-
-S3: Model the correct answer
+```bash
+npm run check
 ```
 
-The LLM only supplies the response evaluation used by this state machine.
+외부 npm 패키지는 사용하지 않습니다.
 
----
+## 자료 저장 방식과 개인정보 주의
 
-## Evaluation
+- 참여자 이름 대신 `P-001` 같은 연구용 코드를 사용하세요.
+- 세션 정보와 사람의 채점 결과는 브라우저의 `localStorage`에 저장됩니다.
+- 음성은 브라우저의 `IndexedDB`에 별도로 저장됩니다.
+- 서버로 자동 전송되지 않습니다.
+- 브라우저 자료를 지우거나 다른 기기로 옮기면 기록이 보이지 않습니다.
+- 중요한 기록은 JSON과 음성 파일로 내보낸 뒤, 연구계획에 맞는 암호화 저장소에 보관해야 합니다.
 
-The project will compare three levels of response evaluation.
+## 연구에서 지켜야 할 원칙
 
-### 1. Lexical / Keyword Matching
+1. 현재 문항은 기능 시험용 후보입니다. 정답·난이도·동형성을 확정하지 않았습니다.
+2. 두 학생 채점자의 일치는 `잠정 기준 자료`일 뿐 전문가 gold data가 아닙니다.
+3. 두 채점자가 합의하지 못하면 `EXPERT_PENDING`으로 남기고 모델 학습 정답으로 쓰지 않습니다.
+4. 문자열 편집거리는 전사 확인을 돕는 참고값이며 점수가 아닙니다.
+5. 실제 참여자를 모집하기 전 연구윤리, 동의, 개인정보, 보관·폐기 절차를 확정해야 합니다.
 
-Checks whether the expected answer or predefined keywords appear in the student response.
+## 버전
 
-### 2. Embedding Similarity
-
-Measures semantic similarity between the expected answer and student response.
-
-### 3. LLM-based Semantic Evaluation
-
-Uses the following context:
-
-```text
-passage
-question
-expected answer
-student response
-```
-
-and predicts:
-
-```text
-CORRECT
-```
-
-or
-
-```text
-INCORRECT
-```
-
-The goal is not to assume that the LLM will perform best.
-
-The study asks whether the additional contextual reasoning capability of an LLM is actually necessary for this task.
-
----
-
-## Human Gold Standard
-
-Human annotations will be used as the reference standard.
-
-Responses may initially be annotated using categories such as:
-
-* `CORRECT`
-* `PARTIAL / UNDERSPECIFIED`
-* `CONTRADICTORY`
-* `IRRELEVANT`
-* `NO RESPONSE`
-* `UNINTERPRETABLE`
-
-For instructional decisions, these labels can be collapsed into:
-
-```text
-CORRECT
-vs.
-INCORRECT / NEEDS SUPPORT
-```
-
-At least two annotators will independently evaluate responses, and inter-rater agreement will be measured before establishing final gold labels.
-
----
-
-## Research Questions
-
-### RQ1
-
-How accurately and reliably can an LLM evaluate the semantic correctness of open-ended factual comprehension responses compared with simpler lexical and embedding-based methods?
-
-### RQ2
-
-For which types of student responses does the LLM make errors, and how do those errors affect the next action in a deterministic prompting protocol?
-
-Examples of response types include:
-
-* synonyms
-* descriptive paraphrases
-* incomplete responses
-* passage-related but non-answer responses
-* responses containing both correct and incorrect information
-
-Evaluation errors will also be translated into instructional consequences.
-
-For example:
-
-```text
-Actual: INCORRECT
-LLM: CORRECT
-→ required prompt is skipped
-```
-
-or:
-
-```text
-Actual: CORRECT
-LLM: INCORRECT
-→ unnecessary prompting is provided
-```
-
-Phase 1 evaluates these state-transition errors, not their long-term effect on student learning outcomes.
-
----
-
-## Expected Contribution
-
-This project does not introduce a new instructional strategy.
-
-Instead, it investigates whether a human judgment step that remains inside an existing evidence-based intervention can be computationally automated.
-
-The expected contribution is:
-
-1. Formalizing open-ended response correctness judgment as a reproducible evaluation task.
-2. Comparing lexical, embedding-based, and LLM-based approaches.
-3. Identifying the response types that cause semantic evaluation failures.
-4. Measuring how evaluation errors propagate into instructional decision errors.
-
----
-
-## Related Work
-
-Key references include:
-
-* Sermier Dessemontet et al. (2024).
-  *Effects of shared text reading for students with intellectual disability: A meta-analytical review of instructional strategies.*
-  https://www.sciencedirect.com/science/article/pii/S1747938X24000241
-
-* Wood, Browder, & Spooner (2020).
-  *Teaching Listening Comprehension of Science e-Texts for Students With Moderate Intellectual Disability.*
-  https://journals.sagepub.com/doi/10.1177/0162643419882421
-
-* Wood, Browder, & Flynn (2015).
-  *Teaching Students With Intellectual Disability to Use a Self-Questioning Strategy to Comprehend Social Studies Text for an Inclusive Setting.*
-  https://journals.sagepub.com/doi/10.1177/1540796915592155
-
-* Dynamic Learning Maps Essential Elements
-  https://dynamiclearningmaps.org/essential-elements
-
-* ETS.
-  *Best Practices for Constructed-Response Scoring.*
-  https://www.ets.org/research/policy_research_reports/publications/report/2022/kgpl.html
-
-* SemEval-2013 Student Response Analysis
-  https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=913881
+- 앱: `0.2`
+- 정책: `reading-research-policy-0.2`
+- 문항: `engineering-form-0.2`
+- 채점: `dual-rater-rule-0.2`
