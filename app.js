@@ -2,31 +2,37 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const app = $('#app');
 
+const APP_VERSION = '0.3-demo';
 const POLICY_VERSION = 'reading-research-policy-0.2';
-const CONTENT_VERSION = 'engineering-form-0.2';
-const RATING_VERSION = 'dual-rater-rule-0.2';
+const CONTENT_VERSION = 'engineering-form-0.3';
+const RATING_VERSION = 'dual-rater-rule-0.3';
+// 허용 발음 목록의 버전. 표준 발음법(국립국어원 표준어 규정 제2부)을 적용한 후보이며 전문가 검토 전이다.
+const PRONUNCIATION_DICT_VERSION = 'accepted-forms-0.3';
+const S = window.Scoring;
 
+// lexicality: real | nonword, regularity: consistent(표기-발음 일치) | phonological(음운변동 필요)
+// accepted: 허용 발음 목록. 비단어의 허용 발음은 표준발음법을 적용한 후보이며 전문가 검토 전이다.
 const stimuli = {
   decodingPractice: [
-    { id: 'DP-01', text: '도토리', expected: '도토리', kind: '연습', condition: 'practice', practice: true }
+    { id: 'DP-01', text: '도토리', accepted: ['도토리'], kind: '연습', condition: 'practice', practice: true }
   ],
   decoding: [
-    { id: 'RW-C-01', text: '나무', expected: '나무', kind: '실제단어', condition: '실제·표기-발음 일치', rule: '규칙적' },
-    { id: 'RW-C-02', text: '모자', expected: '모자', kind: '실제단어', condition: '실제·표기-발음 일치', rule: '규칙적' },
-    { id: 'RW-C-03', text: '바다', expected: '바다', kind: '실제단어', condition: '실제·표기-발음 일치', rule: '규칙적' },
-    { id: 'RW-C-04', text: '우산', expected: '우산', kind: '실제단어', condition: '실제·표기-발음 일치', rule: '규칙적' },
-    { id: 'RW-I-01', text: '국물', expected: '궁물', kind: '실제단어', condition: '실제·음운변동', rule: '비음화 후보' },
-    { id: 'RW-I-02', text: '설날', expected: '설랄', kind: '실제단어', condition: '실제·음운변동', rule: '유음화 후보' },
-    { id: 'RW-I-03', text: '같이', expected: '가치', kind: '실제단어', condition: '실제·음운변동', rule: '구개음화 후보' },
-    { id: 'RW-I-04', text: '꽃잎', expected: '꼰닙', kind: '실제단어', condition: '실제·음운변동', rule: '복합 음운변동 후보' },
-    { id: 'NW-C-01', text: '가눔', expected: '', kind: '비단어 후보', condition: '비단어·표기-발음 일치 후보', rule: '전문가 검토 필요' },
-    { id: 'NW-C-02', text: '두밋', expected: '', kind: '비단어 후보', condition: '비단어·표기-발음 일치 후보', rule: '전문가 검토 필요' },
-    { id: 'NW-C-03', text: '버눅', expected: '', kind: '비단어 후보', condition: '비단어·표기-발음 일치 후보', rule: '전문가 검토 필요' },
-    { id: 'NW-C-04', text: '소덥', expected: '', kind: '비단어 후보', condition: '비단어·표기-발음 일치 후보', rule: '전문가 검토 필요' },
-    { id: 'NW-I-01', text: '각물', expected: '', kind: '비단어 후보', condition: '비단어·음운변동 후보', rule: '전문가 검토 필요' },
-    { id: 'NW-I-02', text: '밭문', expected: '', kind: '비단어 후보', condition: '비단어·음운변동 후보', rule: '전문가 검토 필요' },
-    { id: 'NW-I-03', text: '옷리', expected: '', kind: '비단어 후보', condition: '비단어·음운변동 후보', rule: '전문가 검토 필요' },
-    { id: 'NW-I-04', text: '닫는', expected: '', kind: '비단어 여부 재검토', condition: '비단어·음운변동 후보', rule: '어휘·형태소 충돌 검토 필요' }
+    { id: 'RW-C-01', text: '나무', accepted: ['나무'], lexicality: 'real', regularity: 'consistent', kind: '실제단어', condition: '실제·표기-발음 일치', rule: '규칙적' },
+    { id: 'RW-C-02', text: '모자', accepted: ['모자'], lexicality: 'real', regularity: 'consistent', kind: '실제단어', condition: '실제·표기-발음 일치', rule: '규칙적' },
+    { id: 'RW-C-03', text: '바다', accepted: ['바다'], lexicality: 'real', regularity: 'consistent', kind: '실제단어', condition: '실제·표기-발음 일치', rule: '규칙적' },
+    { id: 'RW-C-04', text: '우산', accepted: ['우산'], lexicality: 'real', regularity: 'consistent', kind: '실제단어', condition: '실제·표기-발음 일치', rule: '규칙적' },
+    { id: 'RW-I-01', text: '국물', accepted: ['궁물'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '비음화 후보' },
+    { id: 'RW-I-02', text: '설날', accepted: ['설랄'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '유음화 후보' },
+    { id: 'RW-I-03', text: '같이', accepted: ['가치'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '구개음화 후보' },
+    { id: 'RW-I-04', text: '꽃잎', accepted: ['꼰닙'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '복합 음운변동 후보' },
+    { id: 'NW-C-01', text: '가눔', accepted: ['가눔'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어 후보', condition: '비단어·표기-발음 일치 후보', rule: '전문가 검토 필요', reviewNote: '‘가누다’의 명사형 ‘가눔’과 형태소 충돌 가능' },
+    { id: 'NW-C-02', text: '두밋', accepted: ['두믿'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어 후보', condition: '비단어·표기-발음 일치 후보', rule: '전문가 검토 필요', reviewNote: '받침 ㅅ이 [ㄷ]으로 소리 나므로 ‘일치’ 조건에 맞지 않을 수 있음' },
+    { id: 'NW-C-03', text: '버눅', accepted: ['버눅'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어 후보', condition: '비단어·표기-발음 일치 후보', rule: '전문가 검토 필요' },
+    { id: 'NW-C-04', text: '소덥', accepted: ['소덥'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어 후보', condition: '비단어·표기-발음 일치 후보', rule: '전문가 검토 필요' },
+    { id: 'NW-I-01', text: '각물', accepted: ['강물'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어 후보', condition: '비단어·음운변동 후보', rule: '비음화 · 전문가 검토 필요', reviewNote: '발음 [강물]이 실제 단어 ‘강물’과 같음' },
+    { id: 'NW-I-02', text: '밭문', accepted: ['반문'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어 후보', condition: '비단어·음운변동 후보', rule: '비음화 · 전문가 검토 필요', reviewNote: '발음 [반문]이 실제 단어 ‘반문’과 같음' },
+    { id: 'NW-I-03', text: '옷리', accepted: ['온니'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어 후보', condition: '비단어·음운변동 후보', rule: '비음화 · 전문가 검토 필요' },
+    { id: 'NW-I-04', text: '닫는', accepted: ['단는'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어 여부 재검토', condition: '비단어·음운변동 후보', rule: '어휘·형태소 충돌 검토 필요', reviewNote: '실제 활용형 ‘닫는’과 같음' }
   ],
   fluencyPractice: [
     { id: 'FP-01', kind: '연습 지문', practice: true, text: '아침이 되자 창문으로 밝은 햇빛이 들어왔습니다.' }
@@ -36,7 +42,33 @@ const stimuli = {
     { id: 'F-B', kind: '설명글 초안', condition: '개발용 지문 B', text: '나무는 뿌리로 땅속의 물을 빨아들인다. 물은 줄기를 지나 잎까지 올라간다. 잎은 햇빛을 이용해 나무가 자라는 데 필요한 양분을 만든다. 나무는 계절에 따라 모습이 달라지기도 한다. 봄에는 새잎이 나고, 가을에는 잎의 색이 변한다. 여러 나무는 사람과 동물에게 그늘과 보금자리를 제공한다.' }
   ]
 };
+// 지문 길이 메타데이터는 본문에서 계산해 버전과 함께 저장한다.
+for (const passage of [...stimuli.fluencyPractice, ...stimuli.fluency]) {
+  const tokens = S.tokenizePassage(passage.text);
+  passage.meta = { eojeol: tokens.length, syllables: S.countSyllables(passage.text), sentences: (passage.text.match(/[.!?]/g) || []).length, contentVersion: CONTENT_VERSION };
+}
+const stimulusById = id => [...stimuli.decodingPractice, ...stimuli.decoding, ...stimuli.fluencyPractice, ...stimuli.fluency].find(item => item.id === id);
 
+const TIMED_DECODING = ['첫 오류', '자기수정', '반복', '분절', '소음'];
+const TIMED_FLUENCY = ['오류', '자기수정', '반복', '긴 멈춤', '도움 제공', '외부 방해'];
+const RULES = {
+  decoding: [
+    ['정확하게 읽음', '정답', '허용 발음 기록'], ['다른 소리로 읽음', '대치 오류', '목표와 실제 소리 위치'], ['일부를 빼고 읽음', '생략 오류', '빠진 위치'],
+    ['없는 소리를 추가함', '전체 단어 오답', '삽입 위치'], ['순서를 바꿈', '전체 단어 오답', '바뀐 순서'], ['같은 부분을 반복함', '한 번만 점수에 포함', '반복 횟수와 시간'],
+    ['나누어 읽고 합치지 못함', '전체 단어 오답', '분절 읽기 사건'], ['나누어 읽은 뒤 올바르게 합침', '최종 정답', '분절 후 합성 사건'],
+    ['짧은 시간 안에 자기수정', '최종 정답', '첫 오류와 수정 시간 (창: 설정값)'], ['무반응', '무반응', '대기 시간'], ['소음 또는 겹친 목소리', '점수 확정 금지', '재녹음 또는 채점 불가']
+  ],
+  fluency: [
+    ['다른 말로 읽음', '해당 어절 오답', '대치 내용 보존 (음절 단위 부분 인정)'], ['단어나 행을 건너뜀', '건너뛴 어절 생략 오류', '행 건너뜀은 사건으로도 표시'],
+    ['없는 말을 추가함', '점수 없음, 삽입 기록', '분모에는 넣지 않음'], ['같은 말을 반복함', '한 번만 점수에 포함', '반복 시간 보존'],
+    ['제한시간 안 자기수정', '최종 정답', '첫 오류와 수정 시간 보존'], ['오래 멈춰 단어를 알려줌', '해당 어절 오답', '도움 제공 표시'],
+    ['사투리 또는 오류가 불명확', '판정 보류', '분자·분모에서 제외'], ['지문을 끝내지 못함', '읽은 범위까지만 계산', '마지막 읽은 어절 지정']
+  ]
+};
+function rulesHtml(module) {
+  const rows = RULES[module] || [];
+  return `<details class="rules"><summary>채점 규칙 보기 (설계도 v0.2 ${module === 'decoding' ? '3.5' : '4.4'}, ${esc(RATING_VERSION)})</summary><div class="table-wrap"><table><thead><tr><th>상황</th><th>처리</th><th>남기는 기록</th></tr></thead><tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${esc(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="quiet">자기수정 창 ${S.SCORING_CONFIG.selfCorrectionWindowMs / 1000}초·머뭇거림 창 ${S.SCORING_CONFIG.hesitationWindowMs / 1000}초는 DIBELS 초기값을 설정으로 둔 것이며 한국어 검증값이 아닙니다.</p></details>`;
+}
 const DECODING_EVENTS = ['대치', '생략', '삽입', '순서 바꿈', '반복', '분절 후 합성', '자기수정', '무응답', '소음'];
 const FLUENCY_EVENTS = ['대치', '단어 생략', '행 건너뜀', '삽입', '반복', '자기수정', '긴 멈춤', '도움 제공', '외부 방해'];
 
@@ -89,7 +121,7 @@ function render(name) {
   app.append(template.content.cloneNode(true));
   app.focus();
   bindCommon();
-  ({ home, setup, mic, screen, route, task, review, result }[name] || (() => {}))();
+  ({ home, setup, mic, screen, route, task, review, result, preview, report }[name] || (() => {}))();
 }
 
 function bindCommon() {
@@ -97,12 +129,21 @@ function bindCommon() {
   $$('[data-action="new-session"]', app).forEach(button => button.onclick = () => render('setup'));
   $$('[data-action="open-review"]', app).forEach(button => button.onclick = () => render('review'));
   $$('[data-action="open-results"]', app).forEach(button => button.onclick = () => render('result'));
+  $$('[data-action="open-report"]', app).forEach(button => button.onclick = () => render('report'));
 }
 
 function home() {
   const pending = sessions().filter(session => scoredResponses(session).some(response => !response.adjudication || ['UNPAIRED', 'NEEDS_CONSENSUS'].includes(response.adjudication.status))).length;
   const counter = $('#review-count');
   if (counter) counter.textContent = pending;
+  bindImport($('#import-session-home'));
+  $('#load-demo').onclick = () => {
+    const demo = buildDemoSession();
+    upsertSession(demo);
+    sessionStorage.setItem('readingResultSession', demo.id);
+    sessionStorage.setItem('readingReviewSession', demo.id);
+    render('result');
+  };
 }
 
 function setup() {
@@ -112,9 +153,9 @@ function setup() {
     const modules = form.getAll('modules');
     if (!modules.length) return alert('검사할 경로를 하나 이상 선택해 주세요.');
     state.session = {
-      id: uid(), participant: form.get('participant').trim(), ageBand: form.get('ageBand'), modules,
+      id: uid(), participant: form.get('participant').trim(), ageBand: form.get('ageBand'), modules, orderPolicy: form.get('randomOrder') ? 'random' : 'fixed', previewPaths: form.getAll('previewPaths'),
       createdAt: now(), updatedAt: now(), screening: {}, responses: [], status: 'CREATED',
-      formVersion: CONTENT_VERSION, policyVersion: POLICY_VERSION, ratingVersion: RATING_VERSION,
+      formVersion: CONTENT_VERSION, policyVersion: POLICY_VERSION, ratingVersion: RATING_VERSION, pronunciationDictVersion: PRONUNCIATION_DICT_VERSION,
       sttModelVersion: 'not-connected', schemaVersion: '0.2',
       deviceMetadata: { userAgent: navigator.userAgent, platform: navigator.platform || 'unknown', language: navigator.language }
     };
@@ -162,7 +203,9 @@ async function analyzeAudio(blob) {
     if (rms < 0.012) flags.push('입력 음량 매우 낮음');
     if (clipRatio > 0.01) flags.push('클리핑 후보');
     if (!flags.length) flags.push('기본 분석 가능');
-    return { durationMs: Math.round(buffer.duration * 1000), sampleRate: buffer.sampleRate, channels: buffer.numberOfChannels, rms: +rms.toFixed(4), peak: +peak.toFixed(4), clipRatio: +clipRatio.toFixed(5), flags };
+    const speech = S.detectSpeech(buffer.getChannelData(0), buffer.sampleRate);
+    if (speech.onsetMs == null) flags.push('발화 미탐지');
+    return { durationMs: Math.round(buffer.duration * 1000), sampleRate: buffer.sampleRate, channels: buffer.numberOfChannels, rms: +rms.toFixed(4), peak: +peak.toFixed(4), clipRatio: +clipRatio.toFixed(5), flags, speech };
   } catch { return fallback; }
 }
 
@@ -235,18 +278,27 @@ function screen() {
 
 function route() {
   const modules = state.session.modules;
-  const cards = [
-    ['decoding', '단어 해독', '연습 1개와 개발용 후보 16개를 고정 순서로 실시합니다.'],
-    ['fluency', '읽기 유창성', '연습 1개와 이야기글·설명글 2개를 전체 낭독합니다.'],
-    ['phonology', '음운인식', '공통 데이터 구조에만 자리 잡고 상세 모듈은 아직 준비 중입니다.'],
-    ['comprehension', '읽기이해', '공통 데이터 구조에만 자리 잡고 상세 모듈은 아직 준비 중입니다.']
-  ];
-  $('#route-summary').innerHTML = cards.map(([id, title, description]) => `<article class="route-card ${modules.includes(id) ? '' : 'unavailable'}"><b>${title}</b><p>${modules.includes(id) ? description : '이번 실행에서는 실시하지 않음'}</p></article>`).join('');
+  const screening = state.session.screening || {};
+  const observed = ['관찰되지 않음', '가끔 관찰됨', '자주 관찰됨'];
+  $('#route-summary').innerHTML = PLATFORM_PATHS.map(path => {
+    const obs = screening[path.screening];
+    const subtests = path.subtests.map(subtest => {
+      const active = subtest.status === 'core' ? modules.includes(subtest.module) : (state.session.previewPaths || []).includes(path.id);
+      const tag = subtest.status === 'core' ? (active ? '<span class="tag core">실시·채점</span>' : '<span class="tag off">이번에 제외</span>') : (active ? '<span class="tag preview">화면 미리보기</span>' : '<span class="tag off">건너뜀</span>');
+      return `<li class="${active ? '' : 'dim'}"><span>${esc(subtest.title)}</span>${tag}</li>`;
+    }).join('');
+    return `<article class="path-card path-${path.id}"><p class="eyebrow">경로 ${path.id}</p><h3>${esc(path.title)}</h3><p class="quiet">선별 관찰: ${obs == null ? '기록 없음' : observed[obs]}</p><ul>${subtests}</ul></article>`;
+  }).join('');
+  $('#tour-previews').onclick = () => startPreviews(PREVIEW_SUBTESTS, 'route');
   $('#start-assessment').onclick = () => {
     state.taskQueue = [];
-    if (modules.includes('decoding')) state.taskQueue.push(...[...stimuli.decodingPractice, ...stimuli.decoding].map(item => ({ ...item, module: 'decoding' })));
+    // 연습은 항상 먼저. 본검사 순서는 설정에 따라 고정 또는 무작위이며, 실제 제시 순서를 세션에 저장한다.
+    const mainItems = [...stimuli.decoding];
+    if (state.session.orderPolicy === 'random') for (let i = mainItems.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [mainItems[i], mainItems[j]] = [mainItems[j], mainItems[i]]; }
+    if (modules.includes('decoding')) state.taskQueue.push(...[...stimuli.decodingPractice, ...mainItems].map(item => ({ ...item, module: 'decoding' })));
     if (modules.includes('fluency')) state.taskQueue.push(...[...stimuli.fluencyPractice, ...stimuli.fluency].map(item => ({ ...item, module: 'fluency' })));
     state.taskIndex = 0;
+    state.session.presentationOrder = state.taskQueue.map(item => item.id);
     state.session.status = 'IN_PROGRESS';
     state.session.startedAt = now();
     upsertSession(state.session);
@@ -333,7 +385,9 @@ function task() {
           retryButton.classList.remove('hidden');
           const quality = $('#quality-summary');
           quality.classList.remove('hidden');
-          quality.innerHTML = `<b>음질 후보</b><span>${esc(state.currentQuality.flags.join(' · '))}</span><small>자동 품질값은 최종 판정이 아닙니다.</small>`;
+          const speech = state.currentQuality.speech;
+          const speechText = speech?.onsetMs != null ? ` · 발화 시작 ${(speech.onsetMs / 1000).toFixed(2)}초 · 발화 길이 ${((speech.offsetMs - speech.onsetMs) / 1000).toFixed(1)}초${speech.pauses.length ? ` · 긴 멈춤 ${speech.pauses.length}회` : ''}` : '';
+          quality.innerHTML = `<b>음질·발화 후보</b><span>${esc(state.currentQuality.flags.join(' · ') + speechText)}</span><small>자동 품질값은 최종 판정이 아닙니다.</small>`;
         };
         state.recordingStartedAt = now();
         state.recorder.start(250);
@@ -381,11 +435,19 @@ function task() {
     try {
       await saveBlob(audioKey, state.currentBlob);
       state.session.responses.push({
-        id: responseId, stimulusId: item.id, module: item.module, target: item.text, expected: item.expected || '', kind: item.kind,
+        id: responseId, stimulusId: item.id, module: item.module, target: item.text, expected: item.accepted?.[0] || item.expected || '', kind: item.kind,
         condition: item.condition || '', rule: item.rule || '', practice: Boolean(item.practice), audioKey,
+        presentationIndex: state.taskIndex, orderPolicy: state.session.orderPolicy || 'fixed',
         stimulusShownAt: state.shownAt, recordingStartedAt: state.recordingStartedAt, recordingStoppedAt: now(),
         durationMs: state.currentQuality?.durationMs || state.seconds * 1000, first60Reached: item.module === 'fluency' && state.seconds >= 60,
-        quality: state.currentQuality, machineAnalysis: { status: 'NOT_CONNECTED', transcript: '', candidate: null, modelVersion: 'not-connected' },
+        accepted: item.accepted || [], lexicality: item.lexicality || '', regularity: item.regularity || '', reviewNote: item.reviewNote || '', passageMeta: item.meta || null,
+        quality: state.currentQuality,
+        machineAnalysis: {
+          status: state.currentQuality?.speech ? 'VAD_ONLY' : 'NOT_CONNECTED', transcript: '', candidate: null, modelVersion: 'energy-vad', configVersion: S.SCORING_CONFIG.version,
+          speechOnsetMs: state.currentQuality?.speech?.onsetMs ?? null, speechOffsetMs: state.currentQuality?.speech?.offsetMs ?? null, pauses: state.currentQuality?.speech?.pauses || [],
+          // 제시 후 첫 발화까지: (녹음 시작 - 제시) + 녹음 안의 발화 시작
+          onsetLatencyMs: state.currentQuality?.speech?.onsetMs != null && state.recordingStartedAt ? new Date(state.recordingStartedAt) - new Date(state.shownAt) + state.currentQuality.speech.onsetMs : null
+        },
         ratings: {}, adjudication: null, createdAt: now()
       });
       state.session.updatedAt = now();
@@ -396,9 +458,12 @@ function task() {
         stopStream();
         state.session.status = 'REVIEW_PENDING';
         state.session.submittedAt = now();
+        sessionStorage.setItem('readingReviewSession', state.session.id);
+        sessionStorage.setItem('readingResultSession', state.session.id);
         state.session.updatedAt = now();
         upsertSession(state.session);
-        render('complete');
+        const previews = PREVIEW_SUBTESTS.filter(subtest => (state.session.previewPaths || []).includes(subtest.pathId));
+        if (previews.length) startPreviews(previews, 'complete'); else render('complete');
       }
     } catch {
       nextButton.disabled = false;
@@ -407,45 +472,124 @@ function task() {
   };
 }
 
-function normalize(value) { return String(value || '').replace(/[\s.,!?~"'’]/g, '').toLowerCase(); }
-function levenshtein(left, right) {
-  const a = [...normalize(left)], b = [...normalize(right)];
-  const matrix = Array.from({ length: b.length + 1 }, (_, index) => [index]);
-  for (let index = 0; index <= a.length; index++) matrix[0][index] = index;
-  for (let i = 1; i <= b.length; i++) for (let j = 1; j <= a.length; j++) matrix[i][j] = Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + (b[i - 1] === a[j - 1] ? 0 : 1));
-  return matrix[b.length][a.length];
+function numberOrNull(value) { return value === '' || value == null ? null : Number(value); }
+const pct = (part, whole) => whole ? `${Math.round(part / whole * 100)}%` : '–';
+const seconds1 = ms => ms == null ? '–' : `${(ms / 1000).toFixed(2)}초`;
+
+// ---------- 나머지 경로 화면 미리보기 (채점·저장 안 함) ----------
+function startPreviews(list, returnTo) {
+  state.previewQueue = list;
+  state.previewIndex = 0;
+  state.previewReturn = returnTo;
+  render('preview');
+}
+
+function preview() {
+  const list = state.previewQueue || PREVIEW_SUBTESTS;
+  state.previewIndex ||= 0;
+  const item = list[state.previewIndex];
+  const finish = () => {
+    if (state.session && state.previewReturn === 'complete') {
+      state.session.previewLog = list.map(subtest => subtest.id);
+      upsertSession(state.session);
+    }
+    render(state.previewReturn === 'complete' ? 'complete' : state.previewReturn === 'route' && state.session ? 'route' : 'home');
+  };
+  $('#preview-path').textContent = `경로 ${item.pathId} · ${item.pathTitle}`;
+  $('#preview-progress').textContent = `미리보기 ${state.previewIndex + 1} / ${list.length}`;
+  $('#preview-title').textContent = item.title;
+  $('#preview-instruction').textContent = item.sample.instruction;
+  $('#preview-stimulus').textContent = item.sample.prompt;
+  $('#preview-options').innerHTML = item.sample.options.map(option => `<button type="button" class="secondary option">${esc(option)}</button>`).join('');
+  $$('#preview-options .option').forEach(button => button.onclick = () => { $$('#preview-options .option').forEach(other => other.classList.remove('chosen')); button.classList.add('chosen'); });
+  $('#preview-meta').innerHTML = `<div><small>저장할 원자료(구현 시)</small><b>${esc(item.measure)}</b></div><div><small>결과지 연결</small><b>${esc(item.report)}</b></div><div><small>설계 근거</small><b>${esc(item.basis || '')}</b></div>`;
+  $('#preview-prev').disabled = !state.previewIndex;
+  $('#preview-prev').onclick = () => { state.previewIndex--; render('preview'); };
+  $('#preview-next').textContent = state.previewIndex === list.length - 1 ? '미리보기 마치기' : '다음';
+  $('#preview-next').onclick = () => { if (state.previewIndex === list.length - 1) finish(); else { state.previewIndex++; render('preview'); } };
+  $('#preview-exit').onclick = finish;
+}
+
+// ---------- 기기 안 음성인식 ----------
+async function getAsr() { return window.ReadingAsrOverride || import('./asr.js'); }
+
+// 한 응답에 ASR을 돌리고 후처리(제한 후보 선택 또는 지문 정렬)까지 machineAnalysis에 저장한다.
+async function analyzeResponseWithAsr(session, response, onProgress) {
+  const blob = response.audioKey ? await getBlob(response.audioKey) : null;
+  if (!blob) return false;
+  const asr = await (await getAsr()).transcribe(blob, onProgress);
+  response.machineAnalysis ||= {};
+  response.machineAnalysis.asr = asr;
+  response.machineAnalysis.status = 'ASR_CANDIDATE';
+  response.machineAnalysis.modelVersion = `${asr.model} (${asr.library})`;
+  if (response.module === 'decoding') {
+    response.machineAnalysis.constrained = S.constrainedDecodingChoice(asr.text, { text: response.target, accepted: response.accepted, expected: response.expected });
+  } else {
+    response.machineAnalysis.alignment = S.alignWordsToPassage(S.tokenizePassage(response.target), asr.words);
+  }
+  session.sttModelVersion = response.machineAnalysis.modelVersion;
+  return true;
 }
 
 function review() {
   const list = sessions().filter(session => session.responses?.length);
   const sessionSelect = $('#session-select');
+  bindImport($('#import-session'));
   if (!list.length) { $('#review-empty').classList.remove('hidden'); return; }
   $('#review-content').classList.remove('hidden');
-  sessionSelect.innerHTML = list.map(session => `<option value="${session.id}">${esc(session.participant)} · ${new Date(session.createdAt).toLocaleDateString('ko-KR')}</option>`).join('');
+  sessionSelect.innerHTML = list.map(session => `<option value="${session.id}">${esc(session.participant)}${session.demo ? ' (예시)' : ''} · ${new Date(session.createdAt).toLocaleDateString('ko-KR')}</option>`).join('');
+  const preferred = sessionStorage.getItem('readingReviewSession');
+  if (preferred && list.some(session => session.id === preferred)) sessionSelect.value = preferred;
   const slot = $('#rater-slot');
   const raterId = $('#rater-id');
+  let current = 0;
   raterId.value = localStorage.getItem(`readingRater${slot.value}`) || '';
   slot.onchange = () => { raterId.value = localStorage.getItem(`readingRater${slot.value}`) || ''; drawSession(); };
   raterId.onchange = () => localStorage.setItem(`readingRater${slot.value}`, raterId.value.trim());
   $('#export-session').onclick = () => exportSession(list.find(session => session.id === sessionSelect.value) || list[0]);
   $('#open-session-result').onclick = () => { sessionStorage.setItem('readingResultSession', sessionSelect.value); render('result'); };
+  $('#run-asr').onclick = async () => {
+    const session = list.find(item => item.id === sessionSelect.value) || list[0];
+    const status = $('#asr-status');
+    const button = $('#run-asr');
+    const targets = session.responses.filter(response => response.audioKey && response.machineAnalysis?.asr?.status !== 'DONE');
+    status.classList.remove('hidden');
+    if (!targets.length) { status.textContent = session.demo ? '예시 기록에는 원음성이 없어 AI 분석을 할 수 없습니다.' : '모든 녹음에 AI 분석이 이미 있습니다.'; return; }
+    button.disabled = true;
+    let done = 0;
+    try {
+      for (const response of targets) {
+        status.textContent = `AI 분석 ${done + 1} / ${targets.length}: ${response.stimulusId} · 처음 한 번은 모델(약 80MB)을 내려받습니다.`;
+        await analyzeResponseWithAsr(session, response, message => { status.textContent = `AI 분석 ${done + 1} / ${targets.length}: ${message}`; });
+        done++;
+        upsertSession(session);
+      }
+      status.textContent = `AI 분석 완료: ${done}개 녹음. 각 문항의 ‘AI 후보’ 칸에서 확인하세요. 점수는 사람이 확정합니다.`;
+    } catch (error) {
+      status.textContent = `AI 분석을 마치지 못했습니다 (${done}개 완료). ${error.message || error} · 인터넷 연결(jsdelivr.net, huggingface.co)을 확인하세요. 사람 채점은 그대로 할 수 있습니다.`;
+    } finally { button.disabled = false; drawSession(); }
+  };
   function drawSession() {
     const session = list.find(item => item.id === sessionSelect.value) || list[0];
+    sessionStorage.setItem('readingReviewSession', session.id);
+    if (current >= session.responses.length) current = 0;
     const navigation = $('#response-list');
     navigation.innerHTML = session.responses.map((response, index) => {
       const a = response.ratings?.A ? 'A✓' : 'A–';
       const b = response.ratings?.B ? 'B✓' : 'B–';
       const status = response.practice ? '연습' : adjudicationLabel(response.adjudication?.status);
-      return `<button class="response-item ${index === 0 ? 'active' : ''}" data-i="${index}"><b>${esc(response.stimulusId)} · ${moduleName(response.module)}</b><small>${esc(response.target.slice(0, 24))}${response.target.length > 24 ? '…' : ''}</small><small class="${response.adjudication && !['UNPAIRED', 'NEEDS_CONSENSUS'].includes(response.adjudication.status) ? 'reviewed' : ''}">${a} ${b} · ${status}</small></button>`;
+      const done = response.adjudication && !['UNPAIRED', 'NEEDS_CONSENSUS'].includes(response.adjudication.status);
+      return `<button class="response-item ${index === current ? 'active' : ''}" data-i="${index}"><b>${esc(response.stimulusId)} · ${moduleName(response.module)}</b><small>${esc(response.target.slice(0, 24))}${response.target.length > 24 ? '…' : ''}</small><small class="${done ? 'reviewed' : ''}">${a} ${b} · ${status}</small></button>`;
     }).join('');
     $$('.response-item', navigation).forEach(button => button.onclick = () => {
+      current = +button.dataset.i;
       $$('.response-item', navigation).forEach(item => item.classList.remove('active'));
       button.classList.add('active');
-      drawDetail(session, +button.dataset.i, slot.value, raterId.value.trim(), drawSession);
+      drawDetail(session, current, slot.value, raterId.value.trim(), drawSession);
     });
-    drawDetail(session, 0, slot.value, raterId.value.trim(), drawSession);
+    drawDetail(session, current, slot.value, raterId.value.trim(), drawSession);
   }
-  sessionSelect.onchange = drawSession;
+  sessionSelect.onchange = () => { current = 0; drawSession(); };
   drawSession();
 }
 
@@ -459,36 +603,334 @@ function eventInputs(events, checked = []) {
 function scoreRadio(value, current, label) {
   return `<label><input type="radio" name="item-score" value="${value}" ${current === value ? 'checked' : ''}><span>${label}</span></label>`;
 }
-function candidateText(expected, transcript) {
-  if (!transcript) return '전사를 입력한 뒤 비교 후보를 생성하세요.';
-  if (!expected) return '<b>전문가 검토 필요</b><br>이 비단어의 허용 발음은 아직 확정되지 않았습니다.';
-  const distance = levenshtein(expected, transcript);
-  return `<b>${distance === 0 ? '문자열 일치 후보' : '문자열 불일치 후보'}</b><br>정규화 편집거리: ${distance}<br><small>공학 확인값일 뿐 최종 점수가 아닙니다.</small>`;
+function attemptSelect(id, value, label) {
+  return `<label>${label}<select id="${id}"><option value="">미정</option><option value="CORRECT" ${value === 'CORRECT' ? 'selected' : ''}>정확</option><option value="INCORRECT" ${value === 'INCORRECT' ? 'selected' : ''}>오류</option></select></label>`;
+}
+
+// ---------- 파형 ----------
+// markers: [{ key, label, ms, draggable, tone }], onChange(key, ms)
+async function mountWaveform(host, { blob, durationMs, markers = [], pauses = [], ticks = [], audio, onChange }) {
+  host.innerHTML = '<canvas class="waveform-canvas" height="120"></canvas><div class="waveform-legend"></div>';
+  const canvas = $('canvas', host);
+  const legend = $('.waveform-legend', host);
+  let peaks = [];
+  let total = durationMs || 1;
+  if (blob) {
+    try {
+      const context = new AudioContext();
+      const buffer = await context.decodeAudioData(await blob.arrayBuffer());
+      await context.close();
+      peaks = S.waveformPeaks(buffer.getChannelData(0), 700);
+      total = Math.round(buffer.duration * 1000) || total;
+    } catch { /* 파형을 그리지 못해도 마커는 표시 */ }
+  }
+  const colors = { onset: '#14877e', sixty: '#9b6500', end: '#a33a3a' };
+  const dpr = window.devicePixelRatio || 1;
+  let drag = null;
+  const xOf = ms => ms / total * canvas.width;
+  const msOf = clientX => {
+    const rect = canvas.getBoundingClientRect();
+    return Math.max(0, Math.min(total, Math.round((clientX - rect.left) / rect.width * total)));
+  };
+  function draw() {
+    const width = canvas.clientWidth * dpr;
+    if (canvas.width !== width) canvas.width = width;
+    canvas.height = 120 * dpr;
+    const ctx = canvas.getContext('2d');
+    const h = canvas.height, mid = h / 2;
+    ctx.clearRect(0, 0, canvas.width, h);
+    ctx.fillStyle = '#f4f7fa'; ctx.fillRect(0, 0, canvas.width, h);
+    ctx.fillStyle = 'rgba(155,101,0,.14)';
+    for (const pause of pauses) ctx.fillRect(xOf(pause.startMs), 0, xOf(pause.endMs) - xOf(pause.startMs), h);
+    const max = Math.max(0.05, ...peaks);
+    ctx.fillStyle = '#16365d';
+    const barWidth = canvas.width / Math.max(1, peaks.length);
+    peaks.forEach((peak, index) => { const bar = peak / max * (mid - 6); ctx.fillRect(index * barWidth, mid - bar, Math.max(1, barWidth - 0.5), bar * 2 || 1); });
+    if (!peaks.length) { ctx.fillStyle = '#627087'; ctx.font = `${13 * dpr}px sans-serif`; ctx.fillText(blob ? '파형을 읽지 못했습니다' : '음성 없음 (예시 자료)', 12 * dpr, 22 * dpr); }
+    for (const marker of markers) {
+      if (marker.ms == null) continue;
+      const x = xOf(marker.ms);
+      ctx.fillStyle = colors[marker.key] || '#14877e';
+      ctx.fillRect(x - dpr, 0, 2 * dpr, h);
+      ctx.fillRect(x - 5 * dpr, 0, 10 * dpr, 10 * dpr);
+    }
+    ctx.fillStyle = '#7b3fa0';
+    for (const tick of ticks) { const x = xOf(tick.timeMs); ctx.fillRect(x - dpr / 2, h - 26 * dpr, dpr, 26 * dpr); ctx.beginPath(); ctx.arc(x, h - 26 * dpr, 4 * dpr, 0, Math.PI * 2); ctx.fill(); }
+    if (audio && !audio.paused) {
+      ctx.fillStyle = '#e04f4f';
+      ctx.fillRect(xOf(audio.currentTime * 1000) - dpr / 2, 0, dpr, h);
+      requestAnimationFrame(draw);
+    }
+    legend.innerHTML = markers.filter(marker => marker.ms != null).map(marker => `<span class="marker-chip ${marker.key}">${esc(marker.label)} ${(marker.ms / 1000).toFixed(2)}초${marker.draggable ? ' ↔' : ''}</span>`).join('') + (pauses.length ? `<span class="marker-chip pause">긴 멈춤 후보 ${pauses.length}곳</span>` : '') + `<span class="quiet">전체 ${(total / 1000).toFixed(1)}초 · 파형을 누르면 그 지점부터 재생</span>`;
+  }
+  canvas.onpointerdown = event => {
+    const ms = msOf(event.clientX);
+    const near = markers.filter(marker => marker.draggable && marker.ms != null)
+      .map(marker => ({ marker, gap: Math.abs(xOf(marker.ms) - xOf(ms)) / dpr })).sort((x, y) => x.gap - y.gap)[0];
+    if (near && near.gap < 12 * (canvas.width / dpr / canvas.clientWidth || 1) + 8) { drag = near.marker; canvas.setPointerCapture(event.pointerId); return; }
+    if (audio?.src) { audio.currentTime = ms / 1000; audio.play(); }
+  };
+  canvas.onpointermove = event => { if (!drag) return; drag.ms = msOf(event.clientX); draw(); };
+  canvas.onpointerup = () => { if (drag) { onChange?.(drag.key, drag.ms); drag = null; draw(); } };
+  if (audio) audio.onplay = () => requestAnimationFrame(draw);
+  draw();
+  return { draw, total: () => total, setTicks(next) { ticks = next; draw(); }, setMarker(key, ms) { const marker = markers.find(item => item.key === key); if (marker) { marker.ms = ms; draw(); } } };
+}
+
+function playSegment(audio, startMs, endMs) {
+  if (!audio?.src) return;
+  audio.currentTime = Math.max(0, startMs / 1000);
+  audio.play();
+  const stopAt = endMs / 1000;
+  const guard = () => { if (audio.currentTime >= stopAt) { audio.pause(); audio.removeEventListener('timeupdate', guard); } };
+  audio.addEventListener('timeupdate', guard);
+}
+
+// ---------- 단어 해독 후보 표시 ----------
+function candidateHtml(response, transcript) {
+  if (!String(transcript || '').trim()) return '<p class="quiet">원음성을 듣고 전사를 입력하면 음절 위치별 오류 후보가 여기에 나타납니다.</p>';
+  const candidate = S.decodingCandidate({ text: response.target, accepted: response.accepted?.length ? response.accepted : (response.expected ? [response.expected] : []), rule: response.rule }, transcript);
+  if (candidate.status === 'NO_RESPONSE') return '<div class="candidate-summary"><b>무응답 후보</b></div>';
+  const attempts = candidate.attempts.map((attempt, index) => {
+    const cells = attempt.ops.map(op => {
+      const cls = op.op === 'match' ? 'ok' : op.op;
+      const top = op.target || '＋';
+      const bottom = op.actual || '∅';
+      const note = op.op === 'sub' ? op.jamo.map(diff => `${diff.label} ${diff.from}→${diff.to}`).join(', ') : op.op === 'del' ? '생략' : op.op === 'ins' ? '삽입' : '';
+      return `<div class="syl ${cls}" title="${esc(note)}"><span>${esc(top)}</span><b>${esc(bottom)}</b><small>${op.target ? `${op.position}음절` : ''}${note ? `<br>${esc(note)}` : ''}</small></div>`;
+    }).join('');
+    const label = candidate.attempts.length > 1 ? (index === 0 ? '첫 시도' : index === candidate.attempts.length - 1 ? '최종 시도' : `${index + 1}번째 시도`) : '시도';
+    return `<div class="attempt-row"><div class="attempt-label"><b>${label}</b><small>“${esc(attempt.raw)}” vs [${esc(attempt.form || '')}]</small><span class="state-pill ${attempt.correct ? 'agree' : 'needs_consensus'}">${attempt.correct ? '허용 발음 일치' : `차이 ${attempt.distance}`}</span></div><div class="syl-row">${cells}</div></div>`;
+  }).join('');
+  const suggestion = candidate.suggestion;
+  return `${attempts}<div class="candidate-summary"><div><b>자동 후보</b> 판정 ${suggestion.itemScore === 'CORRECT' ? '정확' : '오류'} · 첫 시도 ${suggestion.firstAttemptCorrect === 'CORRECT' ? '정확' : '오류'} · 최종 ${suggestion.finalAttemptCorrect === 'CORRECT' ? '정확' : '오류'}${suggestion.events.length ? ` · ${esc(suggestion.events.join(', '))}` : ''}</div>${candidate.notes.map(note => `<small>${esc(note)}</small>`).join('')}<button class="secondary compact-button" id="apply-candidate" type="button">후보를 판정 칸에 채우기</button></div>`;
+}
+
+function applyDecodingSuggestion(response, transcript) {
+  const candidate = S.decodingCandidate({ text: response.target, accepted: response.accepted?.length ? response.accepted : [response.expected].filter(Boolean), rule: response.rule }, transcript);
+  const suggestion = candidate.suggestion;
+  const radio = $(`input[name="item-score"][value="${suggestion.itemScore}"]`);
+  if (radio) radio.checked = true;
+  $('#first-attempt').value = suggestion.firstAttemptCorrect;
+  $('#final-attempt').value = suggestion.finalAttemptCorrect;
+  $$('input[name="rating-event"]').forEach(input => { input.checked = suggestion.events.includes(input.value); });
+  return candidate;
+}
+
+// ---------- 유창성 어절 지도 ----------
+const FLUENCY_TOOLS = [
+  ['sub', '대치'], ['omit', '생략'], ['help', '도움 제공'], ['unclear', '판정 보류'],
+  ['selfcorrect', '자기수정'], ['repeat', '반복'], ['insertAfter', '뒤에 삽입'], ['pauseBefore', '앞 긴 멈춤'], ['lineSkip', '행 건너뜀 시작'], ['interrupt', '외부 방해'],
+  ['sixty', '60초 경계'], ['last', '마지막 읽은 어절'], ['listen', '▶ 추정 위치 듣기']
+];
+
+function passageMapHtml(tokens, work, { interactive = true } = {}) {
+  return tokens.map(token => {
+    const entry = work.marks[token.index] || {};
+    const classes = ['token', entry.mark && entry.mark !== 'correct' ? `m-${entry.mark}` : '', ...(entry.flags || []).map(flag => `f-${flag}`),
+      work.lastIndex != null && token.index > work.lastIndex ? 'unread' : '', work.sixtyIndex === token.index ? 'sixty' : ''].filter(Boolean).join(' ');
+    const title = [entry.mark && entry.mark !== 'correct' ? S.FLUENCY_MARKS[entry.mark].label : '', ...(entry.flags || []).map(flag => S.FLUENCY_FLAGS[flag])].filter(Boolean).join(', ');
+    const actual = entry.mark === 'sub' && entry.actual ? `<small class="actual">${esc(entry.actual)}</small>` : '';
+    return interactive
+      ? `<button type="button" class="${classes}" data-token="${token.index}" title="${esc(title)}">${esc(token.surface)}${actual}</button>`
+      : `<span class="${classes}" title="${esc(title)}">${esc(token.surface)}${actual}</span>`;
+  }).join(' ');
+}
+
+function fluencyMetricsHtml(metrics, meta) {
+  const cell = (label, value, hint = '') => `<div><dt>${label}</dt><dd>${value ?? '–'}</dd>${hint ? `<small>${hint}</small>` : ''}</div>`;
+  const eventText = Object.entries(metrics.events).map(([name, count]) => `${name} ${count}`).join(' · ') || '표시된 오류 없음';
+  return `<dl class="metric-grid">${cell('낭독 구간', metrics.readingSeconds != null ? `${metrics.readingSeconds}초` : '–', '시작~종료 마커')}${cell('정확도(어절)', metrics.accuracyEojeol != null ? `${metrics.accuracyEojeol}%` : '–', `${metrics.correctEojeol}/${metrics.attemptedEojeol} 어절`)}${cell('정확도(음절)', metrics.accuracySyllable != null ? `${metrics.accuracySyllable}%` : '–', `${metrics.correctSyllables}/${metrics.attemptedSyllables} 음절`)}${cell('분당 정확 어절', metrics.correctEojeolPerMin)}${cell('분당 정확 음절', metrics.correctSyllablesPerMin)}${cell('첫 60초 정확 어절', metrics.first60.correctEojeol, metrics.first60.reachedSixty ? '60초 경계까지' : '60초 전에 끝남: 전체와 같음')}</dl><p class="quiet">${esc(eventText)}${metrics.excluded ? ` · 판정 보류 ${metrics.excluded}어절은 분자·분모에서 제외` : ''}${metrics.completed ? '' : ' · 지문 미완료: 읽은 범위까지만 계산'} · 지문 ${meta?.eojeol ?? '–'}어절 ${meta?.syllables ?? '–'}음절</p>`;
+}
+
+function aiBoxHtml(response) {
+  const machine = response.machineAnalysis || {};
+  const asr = machine.asr;
+  const head = '<h3>AI 후보 · 기기 안 Whisper 음성인식</h3>';
+  if (!asr) return `<div class="review-box span-two ai-box">${head}<p class="quiet">아직 AI 분석을 하지 않았습니다. 인식 결과는 오류 후보일 뿐이며 점수는 사람이 확정합니다.</p>${response.audioKey ? '<button class="secondary compact-button" id="ai-run-one" type="button">이 녹음 AI 분석</button>' : '<p class="quiet">원음성이 없는 기록입니다.</p>'}</div>`;
+  const meta = `<small>${esc(asr.model)} · ${esc(asr.library)} · 시각 ${asr.timestampMode === 'word' ? '단어 단위' : '구간 단위(단어 시각은 추정)'} · ${new Date(asr.createdAt).toLocaleString('ko-KR')}</small>`;
+  if (response.module === 'decoding') {
+    const c = machine.constrained;
+    return `<div class="review-box span-two ai-box">${head}<div class="ai-line"><span class="ai-heard">“${esc(asr.text || '(인식 없음)')}”</span>${c?.nearest ? `<span class="marker-chip ${c.confident ? 'onset' : 'sixty'}">가장 가까운 후보 [${esc(c.nearest.form)}] ${esc(c.nearest.label)} · 차이 ${c.nearest.distance}</span>` : ''}</div><p class="quiet">${esc(c?.note || '')}. 음성인식은 비단어를 비슷한 실제 단어로 바꿔 들을 수 있어 사람이 원음성으로 확인해야 합니다.</p>${meta}<button class="secondary compact-button" id="ai-to-transcript" type="button">AI 전사를 전사 칸에 넣기</button></div>`;
+  }
+  const al = machine.alignment;
+  const counts = al ? al.tokens.reduce((acc, token) => { if (token.index <= al.lastReadIndex) acc[token.status]++; return acc; }, { match: 0, sub: 0, omit: 0 }) : null;
+  return `<div class="review-box span-two ai-box">${head}<p class="ai-heard small">“${esc(asr.text)}”</p>${al ? `<div class="chip-row"><span class="marker-chip onset">일치 ${counts.match}</span><span class="marker-chip sixty">대치 후보 ${counts.sub}</span><span class="marker-chip end">생략 후보 ${counts.omit}</span><span class="marker-chip">삽입 후보 ${al.insertions.length}</span>${al.lastReadIndex < al.tokens.length - 1 ? `<span class="marker-chip">${al.tokens.length - 1 - al.lastReadIndex}어절 읽지 않음 후보</span>` : ''}</div>` : ''}${meta}<button class="secondary compact-button" id="ai-to-marks" type="button">AI 후보를 어절 지도에 표시</button><small>표시 후 원음성을 들으며 고치고 저장하세요. 어절 ‘듣기’는 AI 단어 시각을 사용합니다.</small></div>`;
 }
 
 async function drawDetail(session, index, slot, raterId, redraw) {
   const response = session.responses[index];
   const rating = response.ratings?.[slot] || {};
+  const machine = response.machineAnalysis || {};
   const detail = $('#review-detail');
   const qualityFlags = response.quality?.flags?.join(' · ') || '품질값 없음';
-  const expected = response.expected || '허용 발음 미확정';
-  const commonTop = `<p class="eyebrow">${esc(response.stimulusId)} · ${esc(response.kind || '')}${response.practice ? ' · 점수 제외' : ''}</p><h2>${esc(response.target)}</h2><div class="evidence-strip"><span>녹음 ${formatTime((response.durationMs || 0) / 1000)}</span><span>${esc(qualityFlags)}</span><span>${esc(response.condition || '')}</span></div>`;
-  const audioAndTarget = `<div class="review-box"><h3>원음성</h3><audio id="review-audio" controls></audio><button class="text-button audio-download" id="download-audio">음성 파일 내려받기</button></div><div class="review-box"><h3>기대 발음 또는 기준</h3><b>${esc(expected)}</b><small>${esc(response.rule || '')}</small></div>`;
+  const latency = machine.onsetLatencyMs != null ? `<span>반응 시작 ${seconds1(machine.onsetLatencyMs)}</span>` : '';
+  const commonTop = `<p class="eyebrow">${esc(response.stimulusId)} · ${esc(response.kind || '')}${response.practice ? ' · 점수 제외' : ''}${session.demo ? ' · 예시 자료' : ''}</p><h2>${esc(response.target)}</h2><div class="evidence-strip"><span>녹음 ${formatTime((response.durationMs || 0) / 1000)}</span>${latency}<span>${esc(qualityFlags)}</span><span>${esc(response.condition || '')}</span></div>`;
+  const audioBox = `<div class="review-box span-two"><h3>원음성과 발화 구간</h3><audio id="review-audio" controls></audio><div id="waveform" class="waveform"></div><div class="timed-row"><select id="timed-type">${(response.module === 'decoding' ? TIMED_DECODING : TIMED_FLUENCY).map(type => `<option>${type}</option>`).join('')}</select><button class="secondary compact-button" id="add-timed" type="button">현재 재생 위치에 사건 기록</button><span class="quiet">재생하다 멈춘 뒤 누르면 그 시각이 저장됩니다.</span></div><div id="timed-list" class="timed-list"></div><button class="text-button audio-download" id="download-audio">음성 파일 내려받기</button></div>`;
   let scoring;
   if (response.module === 'decoding') {
-    scoring = `<div class="review-box span-two"><h3>${slot} 독립 채점 · 사람 전사</h3><textarea id="transcript" placeholder="원음성을 듣고 들리는 대로 입력하세요.">${esc(rating.transcript || '')}</textarea><button class="secondary" id="compare" type="button">문자열 비교 후보</button><div class="candidate" id="candidate">${candidateText(response.expected, rating.transcript)}</div></div><div class="review-box"><h3>문항 최종 판정</h3><div class="rating-row">${scoreRadio('CORRECT', rating.itemScore, '정확')}${scoreRadio('INCORRECT', rating.itemScore, '오류')}${scoreRadio('UNSCORABLE', rating.itemScore, '채점 불가')}</div></div><div class="review-box"><h3>첫 시도와 최종 시도</h3><div class="mini-fields"><label>첫 시도<select id="first-attempt"><option value="">미정</option><option value="CORRECT" ${rating.firstAttemptCorrect === 'CORRECT' ? 'selected' : ''}>정확</option><option value="INCORRECT" ${rating.firstAttemptCorrect === 'INCORRECT' ? 'selected' : ''}>오류</option></select></label><label>최종 시도<select id="final-attempt"><option value="">미정</option><option value="CORRECT" ${rating.finalAttemptCorrect === 'CORRECT' ? 'selected' : ''}>정확</option><option value="INCORRECT" ${rating.finalAttemptCorrect === 'INCORRECT' ? 'selected' : ''}>오류</option></select></label></div></div><div class="review-box span-two"><h3>확인된 오류·관찰 사건</h3><div class="rating-row">${eventInputs(DECODING_EVENTS, rating.events || [])}</div></div>`;
+    const accepted = response.accepted?.length ? response.accepted : [response.expected].filter(Boolean);
+    scoring = `<div class="review-box"><h3>목표 표기와 허용 발음</h3><div class="accepted-list"><span class="target-chip">${esc(response.target)}</span>→${accepted.map(form => `<span class="accept-chip">[${esc(form)}]</span>`).join('') || '<span class="quiet">미확정</span>'}</div><small>${esc(response.rule || '')}</small>${response.reviewNote ? `<p class="notice warning small-notice"><b>문항 검토:</b> ${esc(response.reviewNote)}</p>` : ''}</div>
+      <div class="review-box"><h3>${slot} 독립 채점 · 사람 전사</h3><input id="transcript" class="transcript-input" value="${esc(rating.transcript || '')}" placeholder="들리는 대로 입력 (예: 꼳입/꼰닙)"><small class="quiet">규약: <code>/</code> 뒤는 다시 읽은 시도, <code>-</code>는 나누어 읽음, 무응답은 “무응답”.</small></div>
+      <div class="review-box span-two"><h3>음절 위치별 오류 후보</h3><div id="candidate" class="candidate">${candidateHtml(response, rating.transcript)}</div></div>
+      <div class="review-box"><h3>문항 최종 판정</h3><div class="rating-row">${scoreRadio('CORRECT', rating.itemScore, '정확')}${scoreRadio('INCORRECT', rating.itemScore, '오류')}${scoreRadio('UNSCORABLE', rating.itemScore, '채점 불가')}</div></div>
+      <div class="review-box"><h3>첫 시도와 최종 시도</h3><div class="mini-fields">${attemptSelect('first-attempt', rating.firstAttemptCorrect, '첫 시도')}${attemptSelect('final-attempt', rating.finalAttemptCorrect, '최종 시도')}</div></div>
+      <div class="review-box span-two"><h3>확인된 오류·관찰 사건</h3><div class="rating-row">${eventInputs(DECODING_EVENTS, rating.events || [])}</div></div>`;
   } else {
-    scoring = `<div class="review-box span-two"><h3>${slot} 독립 채점 · 사람 전사</h3><textarea id="transcript" placeholder="필요한 경우 실제 발화를 전사하세요.">${esc(rating.transcript || '')}</textarea></div><div class="review-box"><h3>자료 사용 여부</h3><div class="rating-row">${scoreRadio('VALID', rating.itemScore, '사용 가능')}${scoreRadio('UNSCORABLE', rating.itemScore, '채점 불가')}</div></div><div class="review-box"><h3>낭독 구간</h3><div class="mini-fields"><label>시작 ms<input type="number" min="0" id="onset-ms" value="${rating.onsetMs ?? 0}"></label><label>종료 ms<input type="number" min="0" id="speech-end-ms" value="${rating.speechEndMs ?? response.durationMs ?? 0}"></label></div></div><div class="review-box span-two"><h3>사람 확정 원자료</h3><div class="metric-inputs"><label>전체 정확 음절 수<input type="number" min="0" id="accurate-syllables" value="${rating.accurateSyllables ?? ''}"></label><label>전체 시도 음절 수<input type="number" min="0" id="attempted-syllables" value="${rating.attemptedSyllables ?? ''}"></label><label>첫 60초 정확 어절 수<input type="number" min="0" id="accurate-eojeol-60" value="${rating.accurateEojeol60 ?? ''}"></label><label>확인된 오류 수<input type="number" min="0" id="error-count" value="${rating.errorCount ?? ''}"></label></div><p class="quiet">대표 유창성 단위는 아직 확정하지 않았으므로 음절·어절 값을 함께 보존합니다.</p></div><div class="review-box span-two"><h3>확인된 오류·관찰 사건</h3><div class="rating-row">${eventInputs(FLUENCY_EVENTS, rating.events || [])}</div></div>`;
+    scoring = `<div class="review-box span-two"><h3>${slot} 독립 채점 · 지문 어절 지도</h3><div class="tool-row" id="tool-row">${FLUENCY_TOOLS.map(([key, label], i) => `<label class="tool"><input type="radio" name="fluency-tool" value="${key}" ${i === 0 ? 'checked' : ''}><span>${label}</span></label>`).join('')}</div><p class="quiet">도구를 고른 뒤 어절을 누르세요. 같은 표시를 다시 누르면 지워집니다. 표시하지 않은 어절은 정확으로 계산합니다. 행을 건너뛰면 건너뛴 어절을 ‘생략’으로 표시하고 첫 어절에 ‘행 건너뜀 시작’을 더합니다.</p><div class="passage-map" id="passage-map"></div><div class="button-row compact"><button class="secondary compact-button" id="pause-to-tokens" type="button">긴 멈춤 후보를 어절에 표시</button><button class="secondary compact-button" id="clear-marks" type="button">표시 모두 지우기</button></div></div>
+      <div class="review-box span-two"><h3>즉시 계산되는 원점수</h3><div id="fluency-metrics"></div></div>
+      <div class="review-box"><h3>자료 사용 여부</h3><div class="rating-row">${scoreRadio('VALID', rating.itemScore, '사용 가능')}${scoreRadio('UNSCORABLE', rating.itemScore, '채점 불가')}</div></div>
+      <div class="review-box"><h3>필요하면 전사</h3><textarea id="transcript" placeholder="대치된 말 등을 기록">${esc(rating.transcript || '')}</textarea></div>`;
   }
-  detail.innerHTML = `${commonTop}<div class="review-grid">${audioAndTarget}${scoring}<div class="review-box span-two"><h3>판정 확신과 메모</h3><label class="inline-check"><input type="checkbox" id="uncertainty" ${rating.uncertainty ? 'checked' : ''}> 이 판정은 불확실함</label><textarea id="rating-notes" placeholder="판정 이유나 모호한 경계를 기록하세요.">${esc(rating.notes || '')}</textarea></div></div><div class="review-actions"><button class="primary" id="save-review">${slot} 독립 채점 저장</button></div><div id="adjudication-panel">${adjudicationHtml(response)}</div>`;
+  detail.innerHTML = `${commonTop}${rulesHtml(response.module)}<div class="review-grid">${audioBox}${aiBoxHtml(response)}${scoring}<div class="review-box span-two"><h3>판정 확신과 메모</h3><label class="inline-check"><input type="checkbox" id="uncertainty" ${rating.uncertainty ? 'checked' : ''}> 이 판정은 불확실함</label><textarea id="rating-notes" placeholder="판정 이유나 모호한 경계를 기록하세요.">${esc(rating.notes || '')}</textarea></div></div><div class="review-actions"><button class="primary" id="save-review">${slot} 독립 채점 저장</button></div><div id="adjudication-panel">${adjudicationHtml(response)}</div>`;
+
+  const audio = $('#review-audio');
+  let blob = null;
   try {
-    const blob = await getBlob(response.audioKey);
+    blob = response.audioKey ? await getBlob(response.audioKey) : null;
     if (blob) {
-      $('#review-audio').src = URL.createObjectURL(blob);
+      audio.src = URL.createObjectURL(blob);
       $('#download-audio').onclick = () => downloadBlob(blob, `${session.participant}_${response.stimulusId}.webm`);
-    }
+    } else $('#download-audio').disabled = true;
   } catch { $('#download-audio').disabled = true; }
-  if ($('#compare')) $('#compare').onclick = () => { $('#candidate').innerHTML = candidateText(response.expected, $('#transcript').value); };
+
+  // 유창성 작업 상태 (저장 전까지 화면 안에서만 바뀜)
+  const tokens = S.tokenizePassage(response.target);
+  const machineOnset = machine.speechOnsetMs ?? 0;
+  const machineEnd = machine.speechOffsetMs ?? response.durationMs ?? 0;
+  const work = {
+    marks: JSON.parse(JSON.stringify(rating.marks || {})),
+    lastIndex: rating.lastIndex ?? tokens.length - 1,
+    sixtyIndex: rating.sixtyIndex ?? null,
+    sixtySource: rating.sixtySource || 'auto',
+    onsetMs: rating.onsetMs ?? machineOnset,
+    endMs: rating.speechEndMs ?? machineEnd
+  };
+  const autoSixty = () => {
+    if (work.endMs - work.onsetMs <= S.SCORING_CONFIG.fluencyWindowMs) return null;
+    return S.tokenAtTime(tokens, work.onsetMs, work.endMs, work.onsetMs + S.SCORING_CONFIG.fluencyWindowMs);
+  };
+  const metricsNow = () => S.computeFluency({ tokens, marks: work.marks, lastIndex: work.lastIndex, sixtyIndex: work.sixtyIndex, onsetMs: work.onsetMs, endMs: work.endMs });
+
+  const markers = response.module === 'fluency'
+    ? [{ key: 'onset', label: '시작', ms: work.onsetMs, draggable: true }, { key: 'sixty', label: '60초', ms: work.endMs - work.onsetMs > S.SCORING_CONFIG.fluencyWindowMs ? work.onsetMs + S.SCORING_CONFIG.fluencyWindowMs : null }, { key: 'end', label: '종료', ms: work.endMs, draggable: true }]
+    : [{ key: 'onset', label: '발화 시작', ms: machine.speechOnsetMs ?? null }, { key: 'end', label: '발화 끝', ms: machine.speechOffsetMs ?? null }];
+  let timedEvents = JSON.parse(JSON.stringify(rating.timedEvents || []));
+  const wave = await mountWaveform($('#waveform'), {
+    blob, durationMs: response.durationMs, markers, pauses: machine.pauses || [], ticks: timedEvents, audio,
+    onChange(key, ms) {
+      if (key === 'onset') work.onsetMs = Math.min(ms, work.endMs - 100);
+      if (key === 'end') work.endMs = Math.max(ms, work.onsetMs + 100);
+      wave.setMarker('onset', work.onsetMs);
+      wave.setMarker('end', work.endMs);
+      wave.setMarker('sixty', work.endMs - work.onsetMs > S.SCORING_CONFIG.fluencyWindowMs ? work.onsetMs + S.SCORING_CONFIG.fluencyWindowMs : null);
+      refreshFluency();
+    }
+  });
+
+  function refreshFluency() {
+    if (response.module !== 'fluency') return;
+    if (work.sixtySource === 'auto') work.sixtyIndex = autoSixty();
+    $('#passage-map').innerHTML = passageMapHtml(tokens, work);
+    $('#fluency-metrics').innerHTML = fluencyMetricsHtml(metricsNow(), response.passageMeta) + (work.onsetMs !== machineOnset || work.endMs !== machineEnd ? `<p class="quiet">자동 발화 구간 ${seconds1(machineOnset)}~${seconds1(machineEnd)} → 사람 수정 ${seconds1(work.onsetMs)}~${seconds1(work.endMs)} (둘 다 저장)</p>` : `<p class="quiet">발화 구간은 자동 탐지값 그대로입니다. 파형의 시작·종료 마커를 끌어 수정할 수 있습니다.</p>`);
+    $$('#passage-map .token').forEach(button => button.onclick = () => {
+      const i = +button.dataset.token;
+      const tool = $('input[name="fluency-tool"]:checked').value;
+      const entry = work.marks[i] || { mark: 'correct', flags: [] };
+      entry.flags ||= [];
+      if (tool === 'listen') {
+        const aligned = machine.alignment?.tokens?.[i];
+        const time = aligned?.startMs != null ? aligned : S.estimateTokenTimes(tokens, work.onsetMs, work.endMs)[i];
+        return playSegment(audio, time.startMs - 300, (time.endMs ?? time.startMs + 600) + 300);
+      }
+      if (tool === 'sixty') { work.sixtyIndex = work.sixtyIndex === i ? autoSixty() : i; work.sixtySource = work.sixtyIndex === i ? 'human' : 'auto'; }
+      else if (tool === 'last') work.lastIndex = work.lastIndex === i ? tokens.length - 1 : i;
+      else if (S.FLUENCY_MARKS[tool]) {
+        entry.mark = entry.mark === tool ? 'correct' : tool;
+        if (entry.mark === 'sub') {
+          const actual = prompt(`“${tokens[i].surface}”을(를) 실제로 어떻게 읽었나요? (선택, 음절 단위 계산에 사용)`, entry.actual || '');
+          if (actual && actual.trim()) entry.actual = actual.trim(); else delete entry.actual;
+        } else delete entry.actual;
+      }
+      else entry.flags = entry.flags.includes(tool) ? entry.flags.filter(flag => flag !== tool) : [...entry.flags, tool];
+      if (entry.mark === 'correct' && !entry.flags.length) delete work.marks[i]; else work.marks[i] = entry;
+      refreshFluency();
+    });
+  }
+
+  function refreshTimed() {
+    const check = S.selfCorrectionCheck(timedEvents);
+    const hesitation = response.module === 'decoding' ? S.hesitationCheck(machine.onsetLatencyMs) : null;
+    const items = [...timedEvents].sort((x, y) => x.timeMs - y.timeMs).map(event => `<span class="marker-chip event">${esc(event.type)} ${seconds1(event.timeMs)} <button type="button" class="chip-x" data-remove="${event.timeMs}|${esc(event.type)}" aria-label="삭제">×</button></span>`).join('');
+    const pairs = check.pairs.map(pair => pair.gapMs == null ? '<span class="quiet">자기수정 앞에 기록된 오류 시각이 없습니다.</span>' : `<span class="marker-chip ${pair.withinWindow ? 'onset' : 'end'}">오류→자기수정 ${(pair.gapMs / 1000).toFixed(1)}초 · ${check.windowMs / 1000}초 창 ${pair.withinWindow ? '이내 (최종 정답 후보)' : '초과 (오답 후보)'}</span>`).join('');
+    const hes = hesitation?.exceeded ? `<span class="marker-chip sixty">반응 시작 ${seconds1(hesitation.onsetLatencyMs)} · 머뭇거림 창 ${hesitation.windowMs / 1000}초 초과 후보</span>` : '';
+    $('#timed-list').innerHTML = items + pairs + hes;
+    $$('[data-remove]').forEach(button => button.onclick = () => {
+      const [time, type] = button.dataset.remove.split('|');
+      timedEvents = timedEvents.filter(event => !(String(event.timeMs) === time && event.type === type));
+      wave.setTicks(timedEvents); refreshTimed();
+    });
+  }
+  $('#add-timed').onclick = () => {
+    if (!audio.src) return alert('원음성이 없는 기록입니다.');
+    timedEvents.push({ type: $('#timed-type').value, timeMs: Math.round(audio.currentTime * 1000) });
+    wave.setTicks(timedEvents); refreshTimed();
+  };
+  refreshTimed();
+
+  if ($('#ai-run-one')) $('#ai-run-one').onclick = async () => {
+    const button = $('#ai-run-one');
+    button.disabled = true;
+    try {
+      await analyzeResponseWithAsr(session, response, message => { button.textContent = message.slice(0, 40); });
+      upsertSession(session);
+      redraw();
+    } catch (error) { alert(`AI 분석 실패: ${error.message || error}`); button.disabled = false; }
+  };
+  if ($('#ai-to-transcript')) $('#ai-to-transcript').onclick = () => {
+    $('#transcript').value = machine.asr.text;
+    $('#transcript').dispatchEvent(new Event('input'));
+  };
+  if ($('#ai-to-marks')) $('#ai-to-marks').onclick = () => {
+    const alignment = machine.alignment;
+    work.marks = {};
+    for (const token of alignment.tokens) {
+      if (token.index > alignment.lastReadIndex) continue;
+      if (token.status === 'sub') work.marks[token.index] = { mark: 'sub', flags: [], actual: token.heard };
+      if (token.status === 'omit') work.marks[token.index] = { mark: 'omit', flags: [] };
+    }
+    for (const insertion of alignment.insertions) {
+      const index = Math.max(0, insertion.afterIndex);
+      const entry = work.marks[index] || { mark: 'correct', flags: [] };
+      entry.flags = [...new Set([...(entry.flags || []), 'insertAfter'])];
+      work.marks[index] = entry;
+    }
+    work.lastIndex = alignment.lastReadIndex >= 0 ? alignment.lastReadIndex : tokens.length - 1;
+    work.aiApplied = true;
+    refreshFluency();
+  };
+
+  if (response.module === 'decoding') {
+    const transcriptInput = $('#transcript');
+    const bindApply = () => { const button = $('#apply-candidate'); if (button) button.onclick = () => applyDecodingSuggestion(response, transcriptInput.value); };
+    transcriptInput.oninput = () => { $('#candidate').innerHTML = candidateHtml(response, transcriptInput.value); bindApply(); };
+    bindApply();
+  } else {
+    refreshFluency();
+    $('#clear-marks').onclick = () => { work.marks = {}; work.lastIndex = tokens.length - 1; work.sixtySource = 'auto'; refreshFluency(); };
+    $('#pause-to-tokens').onclick = () => {
+      const pauses = (machine.pauses || []).filter(pause => pause.startMs >= work.onsetMs && pause.endMs <= work.endMs);
+      if (!pauses.length) return alert('이 녹음에서 탐지된 긴 멈춤 후보가 없습니다.');
+      for (const pause of pauses) {
+        const i = S.tokenAtTime(tokens, work.onsetMs, work.endMs, pause.endMs);
+        const entry = work.marks[i] || { mark: 'correct', flags: [] };
+        entry.flags = [...new Set([...(entry.flags || []), 'pauseBefore'])];
+        work.marks[i] = entry;
+      }
+      refreshFluency();
+    };
+  }
+
   $('#save-review').onclick = () => {
     const actualRaterId = ($('#rater-id')?.value || raterId).trim();
     if (!actualRaterId) return alert('채점자 코드를 입력해 주세요.');
@@ -496,51 +938,58 @@ async function drawDetail(session, index, slot, raterId, redraw) {
     if (!itemScore) return alert('최종 판정 또는 자료 사용 여부를 선택해 주세요.');
     const base = {
       raterSlot: slot, raterId: actualRaterId, transcript: $('#transcript')?.value || '', itemScore,
-      events: $$('input[name="rating-event"]:checked').map(input => input.value), uncertainty: $('#uncertainty').checked,
-      notes: $('#rating-notes').value, ratingVersion: RATING_VERSION, createdAt: now()
+      uncertainty: $('#uncertainty').checked, notes: $('#rating-notes').value, ratingVersion: RATING_VERSION, scoringConfig: S.SCORING_CONFIG.version, createdAt: now(),
+      timedEvents, selfCorrectionCheck: S.selfCorrectionCheck(timedEvents)
     };
-    if (response.module === 'decoding') Object.assign(base, { firstAttemptCorrect: $('#first-attempt').value, finalAttemptCorrect: $('#final-attempt').value });
-    else Object.assign(base, {
-      onsetMs: numberOrNull($('#onset-ms').value), speechEndMs: numberOrNull($('#speech-end-ms').value),
-      accurateSyllables: numberOrNull($('#accurate-syllables').value), attemptedSyllables: numberOrNull($('#attempted-syllables').value),
-      accurateEojeol60: numberOrNull($('#accurate-eojeol-60').value), errorCount: numberOrNull($('#error-count').value)
-    });
+    if (response.module === 'decoding') {
+      const candidate = base.transcript.trim() ? S.decodingCandidate({ text: response.target, accepted: response.accepted?.length ? response.accepted : [response.expected].filter(Boolean), rule: response.rule }, base.transcript) : null;
+      Object.assign(base, {
+        events: $$('input[name="rating-event"]:checked').map(input => input.value),
+        firstAttemptCorrect: $('#first-attempt').value, finalAttemptCorrect: $('#final-attempt').value,
+        // 기계 후보와 사람 판정을 모두 남겨 나중에 자동 후보의 일치도를 계산할 수 있게 한다.
+        machineSuggestion: candidate?.suggestion || null,
+        errorPositions: candidate?.attempts?.map(attempt => attempt.ops.filter(op => op.op !== 'match').map(op => ({ op: op.op, position: op.position, target: op.target, actual: op.actual, jamo: op.jamo }))) || []
+      });
+    } else {
+      const metrics = metricsNow();
+      Object.assign(base, {
+        marks: work.marks, lastIndex: work.lastIndex, sixtyIndex: work.sixtyIndex, sixtySource: work.sixtySource,
+        onsetMs: work.onsetMs, speechEndMs: work.endMs, machineOnsetMs: machineOnset, machineEndMs: machineEnd, aiMarksApplied: Boolean(work.aiApplied),
+        metrics, events: Object.keys(metrics.events),
+        accurateSyllables: metrics.correctSyllables, attemptedSyllables: metrics.attemptedSyllables,
+        accurateEojeol: metrics.correctEojeol, attemptedEojeol: metrics.attemptedEojeol,
+        accurateEojeol60: metrics.first60.correctEojeol, errorCount: metrics.errors
+      });
+    }
     response.ratings[slot] = base;
     response.adjudication = compareRatings(response);
     updateSessionStatus(session);
     upsertSession(session);
-    alert(`${slot} 독립 채점을 저장했습니다.`);
     redraw();
   };
   bindAdjudication(response, session, redraw);
 }
 
-function numberOrNull(value) { return value === '' ? null : Number(value); }
-function comparableRating(response, rating) {
-  if (!rating) return null;
-  const common = { itemScore: rating.itemScore, events: [...(rating.events || [])].sort(), uncertainty: Boolean(rating.uncertainty) };
-  if (response.module === 'decoding') return { ...common, transcript: normalize(rating.transcript), firstAttemptCorrect: rating.firstAttemptCorrect || '', finalAttemptCorrect: rating.finalAttemptCorrect || '' };
-  return { ...common, onsetMs: rating.onsetMs, speechEndMs: rating.speechEndMs, accurateSyllables: rating.accurateSyllables, attemptedSyllables: rating.attemptedSyllables, accurateEojeol60: rating.accurateEojeol60, errorCount: rating.errorCount };
-}
 function compareRatings(response) {
   const a = response.ratings?.A, b = response.ratings?.B;
   if (!a || !b) return { status: 'UNPAIRED', comparedAt: now(), finalRating: null };
-  const exact = JSON.stringify(comparableRating(response, a)) === JSON.stringify(comparableRating(response, b));
-  return exact
+  return S.ratingsAgree(response.module, a, b)
     ? { status: a.itemScore === 'UNSCORABLE' ? 'INVALID_AUDIO' : 'AGREE', comparedAt: now(), selectedSlot: 'A', finalRating: { ...a } }
     : { status: 'NEEDS_CONSENSUS', comparedAt: now(), finalRating: null };
 }
 function ratingSummary(rating, module) {
   if (!rating) return '<p>아직 저장되지 않았습니다.</p>';
-  if (module === 'decoding') return `<p><b>${esc(rating.itemScore)}</b> · “${esc(rating.transcript)}”</p><small>${esc((rating.events || []).join(', ') || '오류 사건 없음')}</small>`;
-  return `<p><b>${esc(rating.itemScore)}</b> · 정확 음절 ${rating.accurateSyllables ?? '–'} · 첫 60초 정확 어절 ${rating.accurateEojeol60 ?? '–'}</p><small>${esc((rating.events || []).join(', ') || '오류 사건 없음')}</small>`;
+  if (module === 'decoding') return `<p><b>${esc(rating.itemScore)}</b> · “${esc(rating.transcript)}” · 첫 ${esc(rating.firstAttemptCorrect || '–')} / 최종 ${esc(rating.finalAttemptCorrect || '–')}</p><small>${esc((rating.events || []).join(', ') || '오류 사건 없음')}</small>`;
+  const metrics = rating.metrics || {};
+  return `<p><b>${esc(rating.itemScore)}</b> · 정확 ${metrics.correctEojeol ?? '–'}/${metrics.attemptedEojeol ?? '–'} 어절 · 분당 ${metrics.correctEojeolPerMin ?? '–'} 어절 · 구간 ${seconds1(rating.onsetMs)}~${seconds1(rating.speechEndMs)}</p><small>${esc(Object.entries(metrics.events || {}).map(([name, count]) => `${name} ${count}`).join(', ') || '오류 사건 없음')}</small>`;
 }
 function adjudicationHtml(response) {
   if (response.practice) return '<div class="adjudication muted-panel"><b>연습 항목</b><p>채점과 원점수에서 제외됩니다.</p></div>';
   const a = response.ratings?.A, b = response.ratings?.B;
-  if (!a || !b) return '<div class="adjudication"><b>독립 채점 진행 중</b><p>두 슬롯이 모두 저장되기 전에는 상대 판정을 비교하지 않습니다.</p></div>';
+  if (!a || !b) return `<div class="adjudication"><b>독립 채점 진행 중</b><p>두 슬롯이 모두 저장되기 전에는 상대 판정을 비교하지 않습니다. (저장됨: ${a ? 'A' : ''}${b ? ' B' : ''}${!a && !b ? '없음' : ''})</p></div>`;
   const status = response.adjudication?.status;
-  return `<div class="adjudication"><div class="adjudication-title"><div><p class="eyebrow">잠정 기준 자료</p><h3>${adjudicationLabel(status)}</h3></div><span class="state-pill ${status?.toLowerCase()}">${esc(status)}</span></div><div class="rater-compare"><div><b>채점 A · ${esc(a.raterId)}</b>${ratingSummary(a, response.module)}</div><div><b>채점 B · ${esc(b.raterId)}</b>${ratingSummary(b, response.module)}</div></div>${status === 'NEEDS_CONSENSUS' ? '<p class="notice warning">두 판정이 다릅니다. 원음성과 규칙을 다시 본 뒤 합의해 한 값을 채택하거나 전문가 검토로 보류하세요.</p><div class="button-row compact"><button class="secondary" data-adjudicate="A">합의 후 A 값 채택</button><button class="secondary" data-adjudicate="B">합의 후 B 값 채택</button><button class="secondary danger" data-adjudicate="EXPERT_PENDING">전문가 검토로 보류</button></div>' : '<p class="quiet">일치한 판정은 AGREE, 채점 불가 일치는 INVALID_AUDIO로 저장됩니다.</p>'}</div>`;
+  const rationale = response.adjudication?.rationale ? `<p class="quiet">${esc(response.adjudication.rationale)}</p>` : '';
+  return `<div class="adjudication"><div class="adjudication-title"><div><p class="eyebrow">잠정 기준 자료</p><h3>${adjudicationLabel(status)}</h3></div><span class="state-pill ${status?.toLowerCase()}">${esc(status)}</span></div><div class="rater-compare"><div><b>채점 A · ${esc(a.raterId)}</b>${ratingSummary(a, response.module)}</div><div><b>채점 B · ${esc(b.raterId)}</b>${ratingSummary(b, response.module)}</div></div>${rationale}${status === 'NEEDS_CONSENSUS' ? '<p class="notice warning">두 판정이 다릅니다. 원음성과 규칙을 다시 본 뒤 합의해 한 값을 채택하거나 전문가 검토로 보류하세요.</p><div class="button-row compact"><button class="secondary" data-adjudicate="A">합의 후 A 값 채택</button><button class="secondary" data-adjudicate="B">합의 후 B 값 채택</button><button class="secondary danger" data-adjudicate="EXPERT_PENDING">전문가 검토로 보류</button></div>' : `<p class="quiet">비교 기준: ${response.module === 'decoding' ? '판정, 첫·최종 시도, 오류 사건 (전사 표기 차이는 비교하지 않음)' : `어절 표시, 60초·마지막 어절, 시작·종료 ±${S.SCORING_CONFIG.timingToleranceMs}ms`}. 합의 전 두 판정은 모두 보존됩니다.</p>`}</div>`;
 }
 function bindAdjudication(response, session, redraw) {
   $$('[data-adjudicate]').forEach(button => button.onclick = () => {
@@ -563,12 +1012,44 @@ function updateSessionStatus(session) {
   if (complete) session.finalizedAt = now();
 }
 
-function exportSession(session) {
+// ---------- 내보내기·가져오기 ----------
+const blobToDataUrl = blob => new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); });
+
+async function exportSession(session) {
   const payload = JSON.parse(JSON.stringify(session));
   payload.exportedAt = now();
-  payload.exportNotice = '오디오 바이트는 포함되지 않음. 각 검토 화면에서 원음성을 별도 내려받아 response.audioKey와 함께 보관.';
+  payload.appVersion = APP_VERSION;
+  payload.versions = { policy: POLICY_VERSION, content: CONTENT_VERSION, rating: RATING_VERSION, scoringConfig: S.SCORING_CONFIG };
+  const withAudio = confirm('원음성을 JSON 안에 함께 넣을까요?\n(다른 기기에서 가져오기 할 때 필요합니다. 파일이 커집니다.)');
+  if (withAudio) {
+    payload.audio = {};
+    for (const response of session.responses) {
+      const blob = response.audioKey ? await getBlob(response.audioKey).catch(() => null) : null;
+      if (blob) payload.audio[response.audioKey] = await blobToDataUrl(blob);
+    }
+    payload.exportNotice = '원음성 포함 (audio: audioKey → data URL).';
+  } else payload.exportNotice = '오디오 바이트는 포함되지 않음. 각 검토 화면에서 원음성을 별도 내려받아 response.audioKey와 함께 보관.';
   downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }), `${session.participant}_${session.id}_research-bundle.json`);
 }
+
+function bindImport(input) {
+  if (!input) return;
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const payload = JSON.parse(await file.text());
+      if (!payload.id || !Array.isArray(payload.responses)) throw new Error('검사 기록 형식이 아닙니다.');
+      for (const [key, dataUrl] of Object.entries(payload.audio || {})) await saveBlob(key, await (await fetch(dataUrl)).blob());
+      delete payload.audio;
+      upsertSession(migrateSession(payload));
+      alert(`${payload.participant} 기록을 가져왔습니다.`);
+      sessionStorage.setItem('readingReviewSession', payload.id);
+      render('review');
+    } catch (error) { alert(`가져오지 못했습니다. ${error.message}`); }
+  };
+}
+
 function downloadBlob(blob, filename) {
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
@@ -577,16 +1058,47 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
+// ---------- 결과 ----------
 function result() {
   const list = sessions().filter(session => scoredResponses(session).length);
   const select = $('#result-session-select');
   if (!list.length) { $('#result-empty').classList.remove('hidden'); return; }
-  select.innerHTML = list.map(session => `<option value="${session.id}">${esc(session.participant)} · ${new Date(session.createdAt).toLocaleDateString('ko-KR')}</option>`).join('');
+  select.innerHTML = list.map(session => `<option value="${session.id}">${esc(session.participant)}${session.demo ? ' (예시)' : ''} · ${new Date(session.createdAt).toLocaleDateString('ko-KR')}</option>`).join('');
   const preferred = sessionStorage.getItem('readingResultSession');
   if (preferred && list.some(session => session.id === preferred)) select.value = preferred;
-  const draw = () => drawResult(list.find(session => session.id === select.value) || list[0]);
+  const draw = () => { sessionStorage.setItem('readingResultSession', select.value); drawResult(list.find(session => session.id === select.value) || list[0]); };
   select.onchange = draw;
+  $('#open-report').onclick = () => { sessionStorage.setItem('readingResultSession', select.value); render('report'); };
   draw();
+}
+
+const lexicalityOf = response => response.lexicality || (/비단어/.test(response.condition) ? 'nonword' : 'real');
+const regularityOf = response => response.regularity || (/음운변동/.test(response.condition) ? 'phonological' : 'consistent');
+
+// 설계도 5.1 3단계: 두 채점자의 독립 판정 일치도, 그리고 AI 후보와 사람 확정값의 일치도.
+function agreementSummary(session) {
+  const responses = scoredResponses(session);
+  const decoding = responses.filter(response => response.module === 'decoding');
+  const fluency = responses.filter(response => response.module === 'fluency');
+  const isError = entry => Boolean(entry && S.FLUENCY_MARKS[entry.mark]?.error);
+  const raterDecoding = S.cohensKappa(decoding.filter(r => r.ratings?.A && r.ratings?.B).map(r => [r.ratings.A.itemScore, r.ratings.B.itemScore]));
+  const raterFirst = S.cohensKappa(decoding.filter(r => r.ratings?.A && r.ratings?.B).map(r => [r.ratings.A.firstAttemptCorrect, r.ratings.B.firstAttemptCorrect]));
+  const raterFluency = S.cohensKappa(fluency.filter(r => r.ratings?.A && r.ratings?.B).flatMap(r => S.tokenizePassage(r.target).map(token => [
+    isError(r.ratings.A.marks?.[token.index]) ? 'E' : 'C', isError(r.ratings.B.marks?.[token.index]) ? 'E' : 'C'])));
+  const final = r => ['AGREE', 'CONSENSUS'].includes(r.adjudication?.status) ? r.adjudication.finalRating : null;
+  const aiDecoding = S.cohensKappa(decoding.filter(r => r.machineAnalysis?.constrained?.nearest && final(r) && final(r).itemScore !== 'UNSCORABLE').map(r => {
+    const c = r.machineAnalysis.constrained;
+    return [c.nearest.label === '허용 발음' && c.nearest.distance === 0 ? 'CORRECT' : 'INCORRECT', final(r).itemScore];
+  }));
+  const aiFluency = S.cohensKappa(fluency.filter(r => r.machineAnalysis?.alignment && final(r)).flatMap(r => r.machineAnalysis.alignment.tokens
+    .filter(token => token.index <= (final(r).lastIndex ?? Infinity))
+    .map(token => [token.status === 'match' ? 'C' : 'E', isError(final(r).marks?.[token.index]) ? 'E' : 'C'])));
+  return { raterDecoding, raterFirst, raterFluency, aiDecoding, aiFluency };
+}
+
+function agreementRow(label, stat, unit) {
+  if (!stat.n) return `<tr><td>${label}</td><td colspan="3" class="quiet">자료 없음</td></tr>`;
+  return `<tr><td>${label}</td><td>${stat.n}${unit}</td><td>${stat.agreement}%</td><td>κ = ${stat.kappa} <span class="quiet">(${S.kappaLabel(stat.kappa)})</span></td></tr>`;
 }
 
 function drawResult(session) {
@@ -594,25 +1106,122 @@ function drawResult(session) {
   const decoding = responses.filter(response => response.module === 'decoding');
   const fluency = responses.filter(response => response.module === 'fluency');
   const usable = response => ['AGREE', 'CONSENSUS'].includes(response.adjudication?.status) && response.adjudication?.finalRating;
+  const isCorrect = response => response.adjudication.finalRating.itemScore === 'CORRECT';
   const scoredDecoding = decoding.filter(usable);
-  const correct = scoredDecoding.filter(response => response.adjudication.finalRating.itemScore === 'CORRECT').length;
+  const correct = scoredDecoding.filter(isCorrect).length;
   const invalid = responses.filter(response => response.adjudication?.status === 'INVALID_AUDIO').length;
   const expert = responses.filter(response => response.adjudication?.status === 'EXPERT_PENDING').length;
   const pending = responses.filter(response => !response.adjudication || ['UNPAIRED', 'NEEDS_CONSENSUS'].includes(response.adjudication.status)).length;
-  const conditions = [...new Set(decoding.map(response => response.condition))];
-  const conditionRows = conditions.map(condition => {
-    const group = decoding.filter(response => response.condition === condition && usable(response));
-    const groupCorrect = group.filter(response => response.adjudication.finalRating.itemScore === 'CORRECT').length;
-    return `<tr><td>${esc(condition)}</td><td>${groupCorrect} / ${group.length}</td></tr>`;
+  const agreeOnly = scoredDecoding.filter(response => response.adjudication.status === 'AGREE');
+
+  const cell = (lex, reg) => {
+    const group = scoredDecoding.filter(response => lexicalityOf(response) === lex && regularityOf(response) === reg);
+    const hit = group.filter(isCorrect).length;
+    const total = decoding.filter(response => lexicalityOf(response) === lex && regularityOf(response) === reg).length;
+    return `<td><b>${hit} / ${group.length}</b> <span class="quiet">${pct(hit, group.length)}</span>${total > group.length ? `<small>미확정 ${total - group.length}</small>` : ''}</td>`;
+  };
+  const grid = `<div class="table-wrap"><table class="grid-2x2"><thead><tr><th></th><th>표기-발음 일치</th><th>음운변동 필요</th></tr></thead><tbody><tr><th>실제단어</th>${cell('real', 'consistent')}${cell('real', 'phonological')}</tr><tr><th>비단어</th>${cell('nonword', 'consistent')}${cell('nonword', 'phonological')}</tr></tbody></table></div>`;
+
+  const errorCounts = {};
+  for (const response of scoredDecoding) for (const event of response.adjudication.finalRating.events || []) errorCounts[event] = (errorCounts[event] || 0) + 1;
+  const latencies = scoredDecoding.map(response => response.machineAnalysis?.onsetLatencyMs).filter(value => value != null).sort((x, y) => x - y);
+  const median = latencies.length ? latencies[Math.floor(latencies.length / 2)] : null;
+
+  const itemRows = decoding.map(response => {
+    const final = response.adjudication?.finalRating;
+    const positions = (final?.errorPositions || []).flat().map(op => op.op === 'sub' ? `${op.position}음절 ${op.target}→${op.actual}` : op.op === 'del' ? `${op.position}음절 생략` : `삽입 ${op.actual}`).join(', ');
+    return `<tr><td>${esc(response.stimulusId)}</td><td><b>${esc(response.target)}</b> <span class="quiet">[${esc((response.accepted || [response.expected]).join(', '))}]</span></td><td>${final ? `“${esc(final.transcript || '')}”` : '–'}</td><td>${final ? (final.itemScore === 'CORRECT' ? '정확' : final.itemScore === 'INCORRECT' ? '오류' : '채점 불가') : '–'}${final?.firstAttemptCorrect && final.firstAttemptCorrect !== final.finalAttemptCorrect ? ' <small>(첫 시도 오류)</small>' : ''}</td><td>${esc(positions || (final?.events || []).join(', ') || '–')}</td><td>${seconds1(response.machineAnalysis?.onsetLatencyMs)}</td><td><span class="state-pill ${(response.adjudication?.status || '').toLowerCase()}">${adjudicationLabel(response.adjudication?.status)}</span></td></tr>`;
   }).join('');
+
   const fluencyCards = fluency.map(response => {
     const rating = response.adjudication?.finalRating;
     if (!rating) return `<article class="result-card pending-result"><p class="eyebrow">${esc(response.stimulusId)}</p><h3>${esc(response.kind)}</h3><p>${adjudicationLabel(response.adjudication?.status)}</p></article>`;
-    const seconds = Math.max(0, ((rating.speechEndMs ?? response.durationMs) - (rating.onsetMs ?? 0)) / 1000);
-    const rate10 = rating.accurateSyllables != null && seconds > 0 ? (rating.accurateSyllables / seconds * 10).toFixed(1) : '–';
-    return `<article class="result-card"><p class="eyebrow">${esc(response.stimulusId)} · ${adjudicationLabel(response.adjudication.status)}</p><h3>${esc(response.kind)}</h3><dl><div><dt>실제 낭독 구간</dt><dd>${seconds ? `${seconds.toFixed(1)}초` : '–'}</dd></div><div><dt>전체 정확 음절</dt><dd>${rating.accurateSyllables ?? '–'}</dd></div><div><dt>10초당 정확 음절</dt><dd>${rate10}</dd></div><div><dt>첫 60초 정확 어절</dt><dd>${rating.accurateEojeol60 ?? '–'}</dd></div><div><dt>확인 오류</dt><dd>${rating.errorCount ?? '–'}</dd></div></dl></article>`;
+    const tokens = S.tokenizePassage(response.target);
+    const metrics = rating.metrics || S.computeFluency({ tokens, marks: rating.marks, lastIndex: rating.lastIndex, sixtyIndex: rating.sixtyIndex, onsetMs: rating.onsetMs, endMs: rating.speechEndMs });
+    const d = (label, value) => `<div><dt>${label}</dt><dd>${value ?? '–'}</dd></div>`;
+    return `<article class="result-card wide-card"><p class="eyebrow">${esc(response.stimulusId)} · ${adjudicationLabel(response.adjudication.status)}</p><h3>${esc(response.kind)}</h3><dl>${d('낭독 구간', `${metrics.readingSeconds}초`)}${d('정확도', `${metrics.accuracyEojeol}% 어절 · ${metrics.accuracySyllable}% 음절`)}${d('분당 정확 어절', metrics.correctEojeolPerMin)}${d('분당 정확 음절', metrics.correctSyllablesPerMin)}${d('첫 60초 정확 어절', metrics.first60.correctEojeol)}${d('오류', metrics.errors)}</dl><h4>오류 지도</h4><div class="passage-map static">${passageMapHtml(tokens, { marks: rating.marks || {}, lastIndex: rating.lastIndex, sixtyIndex: rating.sixtyIndex }, { interactive: false })}</div><p class="quiet">${esc(Object.entries(metrics.events).map(([name, count]) => `${name} ${count}`).join(' · ') || '표시된 오류 없음')} · 분모: 시도 ${metrics.attemptedEojeol}어절/${metrics.attemptedSyllables}음절${metrics.excluded ? `, 보류 ${metrics.excluded}어절 제외` : ''}</p></article>`;
   }).join('');
-  $('#result-content').innerHTML = `<div class="notice warning"><b>진단 결과가 아닙니다.</b> 표준점수·백분위·난독증 판정 없이 두 채점자가 확인한 원점수와 보류 상태만 표시합니다.</div><div class="result-meta"><span>참여자 ${esc(session.participant)}</span><span>${esc(session.ageBand)}</span><span>상태 ${esc(session.status)}</span><span>정책 ${esc(session.policyVersion)}</span></div><div class="result-kpis"><article><small>해독 정확</small><b>${correct} / ${scoredDecoding.length}</b><span>잠정 확정 문항만</span></article><article><small>전문가 보류</small><b>${expert}</b><span>점수에서 제외</span></article><article><small>채점 진행 중</small><b>${pending}</b><span>독립 채점 또는 합의 필요</span></article><article><small>무효 음성</small><b>${invalid}</b><span>원점수에서 제외</span></article></div><section class="result-section"><h2>단어 해독 조건별 원점수</h2>${conditionRows ? `<div class="table-wrap"><table><thead><tr><th>조건</th><th>정확 / 채점 가능</th></tr></thead><tbody>${conditionRows}</tbody></table></div>` : '<p class="quiet">확정된 해독 문항이 없습니다.</p>'}</section><section class="result-section"><h2>읽기 유창성 원자료</h2><div class="fluency-results">${fluencyCards || '<p class="quiet">유창성 기록이 없습니다.</p>'}</div></section><section class="evidence-note"><h2>결과 해석 범위</h2><ul><li>문항과 지문은 기능 시험용 후보이며 난이도와 동형성이 확정되지 않았습니다.</li><li>문자열 편집거리는 공학 확인값이며 점수로 사용하지 않습니다.</li><li>AGREE와 CONSENSUS를 구분하여 보존하고 EXPERT_PENDING은 모델 정답으로 사용하지 않습니다.</li></ul></section>`;
+
+  $('#result-content').innerHTML = `<div class="notice warning"><b>진단 결과가 아닙니다.</b> 표준점수·백분위·난독증 판정 없이 두 채점자가 확인한 원점수와 보류 상태만 표시합니다.${session.demo ? ' <b>이 기록은 화면 시연용 예시 자료입니다.</b>' : ''}</div>
+  <div class="result-meta"><span>참여자 ${esc(session.participant)}</span><span>${esc(session.ageBand)}</span><span>상태 ${esc(session.status)}</span><span>문항 ${esc(session.formVersion)}</span><span>채점 ${esc(session.ratingVersion)}</span><span>발음 목록 ${esc(session.pronunciationDictVersion || '0.2 이전')}</span><span>음성인식 ${esc(session.sttModelVersion || 'not-run')}</span></div>
+  <div class="result-kpis"><article><small>해독 정확</small><b>${correct} / ${scoredDecoding.length}</b><span>AGREE만: ${agreeOnly.filter(isCorrect).length} / ${agreeOnly.length}</span></article><article><small>전문가 보류</small><b>${expert}</b><span>점수에서 제외</span></article><article><small>채점 진행 중</small><b>${pending}</b><span>독립 채점 또는 합의 필요</span></article><article><small>무효 음성</small><b>${invalid}</b><span>원점수에서 제외</span></article></div>
+  <section class="result-section"><h2>단어 해독 2×2 조건별 원점수</h2>${scoredDecoding.length ? grid : '<p class="quiet">확정된 해독 문항이 없습니다.</p>'}<div class="chip-row">${Object.entries(errorCounts).map(([name, count]) => `<span class="marker-chip">${esc(name)} ${count}</span>`).join('') || '<span class="quiet">확정 문항에 기록된 오류 사건 없음</span>'}${median != null ? `<span class="marker-chip onset">반응 시작 중앙값 ${seconds1(median)}</span>` : ''}</div></section>
+  <section class="result-section"><h2>문항별 근거 추적</h2><div class="table-wrap"><table class="item-table"><thead><tr><th>문항</th><th>표기 [허용 발음]</th><th>전사</th><th>판정</th><th>오류 위치</th><th>반응 시작</th><th>상태</th></tr></thead><tbody>${itemRows}</tbody></table></div></section>
+  <section class="result-section"><h2>채점 신뢰도와 AI 후보 일치도</h2>${(() => { const a = agreementSummary(session); return `<div class="table-wrap"><table class="item-table"><thead><tr><th>비교</th><th>표본</th><th>일치율</th><th>Cohen's κ</th></tr></thead><tbody>${agreementRow('채점 A ↔ B · 해독 최종 판정', a.raterDecoding, '문항')}${agreementRow('채점 A ↔ B · 해독 첫 시도', a.raterFirst, '문항')}${agreementRow('채점 A ↔ B · 유창성 어절 정오', a.raterFluency, '어절')}${agreementRow('AI 후보 ↔ 사람 확정 · 해독', a.aiDecoding, '문항')}${agreementRow('AI 후보 ↔ 사람 확정 · 유창성 어절', a.aiFluency, '어절')}</tbody></table></div><p class="quiet">A↔B는 합의 전 독립 판정 기준. AI 비교는 AGREE·CONSENSUS로 확정된 값만 사용합니다. κ 해석 구간은 Landis & Koch(1977)의 관례이며 합격 기준이 아닙니다. 표본이 작으면 κ는 크게 흔들립니다.</p>`; })()}</section>
+  <section class="result-section"><h2>읽기 유창성 원자료</h2><div class="fluency-results">${fluencyCards || '<p class="quiet">유창성 기록이 없습니다.</p>'}</div></section>
+  <section class="evidence-note"><h2>결과 해석 범위</h2><ul><li>문항과 지문은 기능 시험용 후보이며 난이도와 동형성이 확정되지 않았습니다.</li><li>음절 정렬·발화 탐지·음성인식(Whisper)은 오류 후보를 만드는 공학 계산이며, 최종값은 사람이 확정했습니다.</li><li>AGREE와 CONSENSUS를 구분하여 보존하고 EXPERT_PENDING은 모델 정답으로 사용하지 않습니다.</li><li>자기수정·머뭇거림 창(${S.SCORING_CONFIG.selfCorrectionWindowMs}ms)은 DIBELS 초기값을 설정으로 둔 것이며 한국어 검증값이 아닙니다.</li></ul></section>`;
+}
+
+// ---------- 시연용 예시 기록 ----------
+// 실제 참여자 자료가 아니다. 결과 화면의 일치·합의·보류 흐름을 보여주기 위한 가상 채점값이며 음성은 없다.
+function buildDemoSession() {
+  const created = now();
+  const session = {
+    id: uid(), participant: 'DEMO-예시', ageBand: '아동', modules: ['decoding', 'fluency'], demo: true,
+    createdAt: created, updatedAt: created, startedAt: created, screening: { decoding: 2, fluency: 1, phonology: 1, comprehension: 0, ruleStatus: 'DEMO' }, responses: [], status: 'REVIEW_PENDING',
+    previewPaths: ['A', 'B', 'C', 'D'], previewLog: PREVIEW_SUBTESTS.map(subtest => subtest.id), orderPolicy: 'fixed',
+    formVersion: CONTENT_VERSION, policyVersion: POLICY_VERSION, ratingVersion: RATING_VERSION, pronunciationDictVersion: PRONUNCIATION_DICT_VERSION, sttModelVersion: 'not-run', schemaVersion: '0.3'
+  };
+  // [문항 ID, A 전사, B 전사, 반응 시작 ms, 합의 처리]
+  const decodingPlan = [
+    ['RW-C-01', '나무', '나무', 820], ['RW-C-02', '모자', '모자', 760], ['RW-C-03', '바다', '바다', 700], ['RW-C-04', '우산', '우산', 910],
+    ['RW-I-01', '국물', '국물', 1350], ['RW-I-02', '설랄', '설랄', 1120], ['RW-I-03', '가치', '가치', 980], ['RW-I-04', '꼳입/꼰닙', '꼳입/꼰닙', 1640],
+    ['NW-C-01', '가눔', '가눔', 1210], ['NW-C-02', '두믿', '두밋', 1580, 'A'], ['NW-C-03', '버-눅', '버-눅', 1900], ['NW-C-04', '소덥', '소덥', 1300],
+    ['NW-I-01', '각물', '각물', 2100], ['NW-I-02', '받문', '반문', 2350, 'EXPERT_PENDING'], ['NW-I-03', '옫리', '옫리', 2600], ['NW-I-04', '단는', '단는', 1450]
+  ];
+  const rate = (response, slot, transcript) => {
+    const candidate = S.decodingCandidate({ text: response.target, accepted: response.accepted, rule: response.rule }, transcript);
+    return {
+      raterSlot: slot, raterId: slot === 'A' ? 'R-A' : 'R-B', transcript, itemScore: candidate.suggestion.itemScore,
+      firstAttemptCorrect: candidate.suggestion.firstAttemptCorrect, finalAttemptCorrect: candidate.suggestion.finalAttemptCorrect, events: candidate.suggestion.events,
+      machineSuggestion: candidate.suggestion, errorPositions: candidate.attempts?.map(attempt => attempt.ops.filter(op => op.op !== 'match').map(op => ({ op: op.op, position: op.position, target: op.target, actual: op.actual, jamo: op.jamo }))) || [],
+      uncertainty: false, notes: '예시', ratingVersion: RATING_VERSION, scoringConfig: S.SCORING_CONFIG.version, createdAt: created
+    };
+  };
+  const base = (item, module, durationMs, speech) => ({
+    id: uid(), stimulusId: item.id, module, target: item.text, expected: item.accepted?.[0] || '', accepted: item.accepted || [], kind: item.kind,
+    lexicality: item.lexicality || '', regularity: item.regularity || '', reviewNote: item.reviewNote || '', passageMeta: item.meta || null,
+    condition: item.condition || '', rule: item.rule || '', practice: false, audioKey: null, durationMs,
+    quality: { flags: ['예시 자료 · 음성 없음'] }, machineAnalysis: { status: 'DEMO', modelVersion: 'demo', ...speech }, ratings: {}, adjudication: null, createdAt: created
+  });
+  for (const [id, a, b, latency, resolve] of decodingPlan) {
+    const item = stimulusById(id);
+    const response = base(item, 'decoding', latency + 1400, { speechOnsetMs: latency - 300, speechOffsetMs: latency + 500, onsetLatencyMs: latency, pauses: [] });
+    response.ratings.A = rate(response, 'A', a);
+    response.ratings.B = rate(response, 'B', b);
+    if (id === 'RW-I-04') for (const slot of ['A', 'B']) {
+      response.ratings[slot].timedEvents = [{ type: '첫 오류', timeMs: 1400 }, { type: '자기수정', timeMs: 2250 }];
+      response.ratings[slot].selfCorrectionCheck = S.selfCorrectionCheck(response.ratings[slot].timedEvents);
+    }
+    response.adjudication = compareRatings(response);
+    if (resolve === 'EXPERT_PENDING') response.adjudication = { status: 'EXPERT_PENDING', comparedAt: created, finalRating: null, rationale: '[받문]/[반문] 청취 불일치 · 실제 단어 ‘반문’과 충돌 가능해 전문가 보류' };
+    else if (resolve) response.adjudication = { status: 'CONSENSUS', comparedAt: created, selectedSlot: resolve, finalRating: { ...response.ratings[resolve] }, rationale: '받침 ㄷ/ㅅ 청취 차이를 원음성 재청취 후 A 값으로 합의' };
+    session.responses.push(response);
+  }
+  const fluencyPlan = [
+    { id: 'F-A', onset: 620, end: 31400, marks: { 6: { mark: 'correct', flags: ['repeat'] }, 18: { mark: 'sub', flags: [], actual: '민주는' }, 25: { mark: 'correct', flags: ['selfcorrect'] }, 29: { mark: 'correct', flags: ['pauseBefore'] } }, pauses: [{ startMs: 20400, endMs: 21600, durationMs: 1200 }] },
+    { id: 'F-B', onset: 540, end: 36800, marks: { 3: { mark: 'omit', flags: [] }, 11: { mark: 'sub', flags: [], actual: '햇볕을' }, 20: { mark: 'help', flags: ['pauseBefore'] }, 27: { mark: 'correct', flags: ['insertAfter'] } }, pauses: [{ startMs: 22100, endMs: 24300, durationMs: 2200 }] }
+  ];
+  for (const plan of fluencyPlan) {
+    const item = stimulusById(plan.id);
+    const response = base(item, 'fluency', plan.end + 900, { speechOnsetMs: plan.onset, speechOffsetMs: plan.end, pauses: plan.pauses });
+    const tokens = S.tokenizePassage(item.text);
+    const rating = (slot, onsetShift) => {
+      const metrics = S.computeFluency({ tokens, marks: plan.marks, onsetMs: plan.onset + onsetShift, endMs: plan.end });
+      return {
+        raterSlot: slot, raterId: slot === 'A' ? 'R-A' : 'R-B', transcript: '', itemScore: 'VALID', marks: JSON.parse(JSON.stringify(plan.marks)), lastIndex: tokens.length - 1, sixtyIndex: null, sixtySource: 'auto',
+        onsetMs: plan.onset + onsetShift, speechEndMs: plan.end, machineOnsetMs: plan.onset, machineEndMs: plan.end, metrics, events: Object.keys(metrics.events),
+        accurateSyllables: metrics.correctSyllables, attemptedSyllables: metrics.attemptedSyllables, accurateEojeol: metrics.correctEojeol, attemptedEojeol: metrics.attemptedEojeol,
+        accurateEojeol60: metrics.first60.correctEojeol, errorCount: metrics.errors, uncertainty: false, notes: '예시', ratingVersion: RATING_VERSION, createdAt: created
+      };
+    };
+    response.ratings.A = rating('A', 0);
+    response.ratings.B = rating('B', 120);
+    response.adjudication = compareRatings(response);
+    session.responses.push(response);
+  }
+  updateSessionStatus(session);
+  return session;
 }
 
 $('#reset-data').onclick = () => {

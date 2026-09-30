@@ -7,7 +7,7 @@ const css = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
 
 const templates = [
   'home', 'setup', 'mic', 'screen', 'route',
-  'task', 'complete', 'review', 'result'
+  'task', 'complete', 'review', 'result', 'preview', 'report'
 ];
 
 for (const name of templates) {
@@ -26,5 +26,17 @@ assert.ok(html.includes('진단용 아님'), '비진단 안내가 없습니다.'
 assert.ok(html.includes('app.js'), 'app.js 연결이 없습니다.');
 assert.ok(html.includes('styles.css'), 'styles.css 연결이 없습니다.');
 assert.ok(css.length > 1000, '스타일 파일이 비어 있거나 너무 짧습니다.');
+
+// 브라우저는 classic script들을 한 전역 범위에서 실행한다. 같은 이름의 최상위 const/let/function이 있으면 화면 전체가 멈추므로 합쳐서 파싱한다.
+import { execFileSync } from 'node:child_process';
+import { writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+const scripts = [...html.matchAll(/<script src=["']([^"']+)["']/g)].map(match => match[1]).filter(src => !/^https?:/.test(src));
+assert.deepEqual(scripts, ['scoring.js', 'catalog.js', 'report.js', 'app.js'], `스크립트 순서: ${scripts}`);
+const bundle = (await Promise.all(scripts.map(src => readFile(new URL(`../${src}`, import.meta.url), 'utf8')))).join('\n;\n');
+const bundlePath = join(mkdtempSync(join(tmpdir(), 'kra-')), 'bundle.js');
+writeFileSync(bundlePath, bundle);
+execFileSync(process.execPath, ['--check', bundlePath]);
 
 console.log('통과: 핵심 파일, 화면, 저장, 녹음, 채점 상태를 확인했습니다.');
