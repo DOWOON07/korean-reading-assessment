@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="한국어 읽기평가의 선별, 해독, 유창성, 사람 검토 흐름을 시험하는 연구용 프로토타입">
+  <meta name="description" content="누구나 디지털로 자신의 읽기 능력을 평가받는 한국어 읽기평가 프로토타입 (선별, 단어 해독, 읽기 유창성, 음성인식 자동 채점)">
   <title>읽기지도 연구용 프로토타입</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2316365d'/%3E%3Cpath d='M16 17h14c5 0 9 4 9 9v24c-2-3-5-5-10-5H16z' fill='%23fff'/%3E%3Cpath d='M48 17H34c-5 0-9 4-9 9v24c2-3 5-5 10-5h13z' fill='%236ed0c5' opacity='.9'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
@@ -29,26 +29,27 @@
   <template id="home-template">
     <section class="hero-grid">
       <div class="hero-copy">
-        <p class="eyebrow">RESEARCH PROTOTYPE 0.3 DEMO</p>
+        <p class="eyebrow">RESEARCH PROTOTYPE 0.4 DEMO</p>
         <h1>짧게 확인하고,<br><span>필요한 읽기검사로.</span></h1>
-        <p class="lead">아동부터 성인까지 사용할 수 있는 한국어 읽기평가 흐름을 시험합니다. 지금은 단어 해독과 읽기 유창성 모듈을 중심으로 작동합니다.</p>
+        <p class="lead">누구나 디지털로 쉽게 접근해 자신의 읽기 능력을 평가받는 한국어 읽기평가입니다. 소리 내어 읽으면 시스템이 녹음을 듣고 자동으로 채점해 결과지를 만듭니다. 지금은 단어 해독과 읽기 유창성 모듈이 작동합니다.</p>
         <div class="module-launch">
           <p class="eyebrow">모듈별 검사</p>
           <div class="module-cards">
-            <button class="module-card" data-action="new-module" data-module="decoding"><b>단어 해독</b><span>실제단어·비단어 16개를 읽고 녹음 → 해독 결과지</span><em>약 3분</em></button>
-            <button class="module-card" data-action="new-module" data-module="fluency"><b>읽기 유창성</b><span>짧은 글 2편을 낭독하고 녹음 → 유창성 결과지</span><em>약 3분</em></button>
+            <button class="module-card" data-action="new-module" data-module="decoding"><b>단어 해독</b><span>실제단어·비단어를 소리 내어 읽기 → 자동 채점 → 해독 결과지</span><em>데모 약 2분</em></button>
+            <button class="module-card" data-action="new-module" data-module="fluency"><b>읽기 유창성</b><span>짧은 글을 소리 내어 읽기 → 자동 채점 → 유창성 결과지</span><em>데모 약 2분</em></button>
           </div>
         </div>
         <div class="hero-actions">
           <button class="secondary" data-action="new-session">전체 흐름 (선별 → 경로)</button>
-          <button class="secondary" data-action="open-review">검토할 기록 보기 <span id="review-count">0</span></button>
           <button class="secondary" data-action="open-report">결과지</button>
         </div>
         <div class="hero-actions secondary-actions">
-          <button class="text-button" id="load-demo">예시 채점 기록 불러오기</button>
+          <button class="text-button" id="load-demo">예시 결과지 불러오기</button>
+          <button class="text-button" data-action="open-review">연구용: 자동 채점 검증</button>
           <label class="text-button file-button">기록 JSON 가져오기<input type="file" id="import-session-home" accept="application/json,.json" hidden></label>
         </div>
-        <p class="quiet">검사는 난독증을 진단하지 않습니다. 원음성과 판정 근거를 남기는 연구용 도구입니다.</p>
+        <div class="asr-panel"><span id="asr-state" class="asr-state"></span><button class="text-button" id="preload-asr">음성인식 모델 미리 받기</button></div>
+        <p class="quiet">검사는 난독증을 진단하지 않습니다. 결과에 따라 전문가의 대면 심층 읽기검사를 받아 볼 수 있도록 안내합니다.</p>
       </div>
       <div class="route-map" aria-label="검사 진행 구조">
         <div class="map-node active"><b>01</b><span>기초 정보와<br>짧은 선별</span></div>
@@ -70,8 +71,8 @@
       </div>
       <div class="status-grid">
         <article class="status-card done"><span class="status-label">작동</span><h3>연습·본검사·재녹음</h3><p>장치 점검 뒤 연습과 본검사를 구분하고, 음성·시간·품질 후보를 저장합니다.</p></article>
-        <article class="status-card done"><span class="status-label">작동</span><h3>두 사람의 독립 채점</h3><p>채점 A와 B를 따로 보존하고, 일치·합의·전문가 보류 상태를 구분합니다.</p></article>
-        <article class="status-card provisional"><span class="status-label">개발용</span><h3>문항 16개·지문 2개</h3><p>기능 시험용 후보입니다. 난이도·동형성·비단어 충돌은 아직 확정하지 않았습니다.</p></article>
+        <article class="status-card done"><span class="status-label">작동</span><h3>음성인식 자동 채점</h3><p>기기 안 Whisper 음성인식으로 녹음을 듣고 문항·어절 단위로 자동 채점합니다. 원음성은 외부로 보내지 않습니다.</p></article>
+        <article class="status-card provisional"><span class="status-label">개발용</span><h3>데모 8문항·지문 1개 / 전체 16문항·지문 2개</h3><p>기능 시험용 후보입니다. 난이도·동형성·비단어 충돌은 아직 확정하지 않았습니다.</p></article>
         <article class="status-card blocked"><span class="status-label">제공 안 함</span><h3>진단과 규준점수</h3><p>표준화 자료가 없으므로 난독증 진단, 백분위, 위험군 판정은 하지 않습니다.</p></article>
       </div>
     </section>
@@ -83,7 +84,7 @@
       <div class="stepper" aria-label="검사 단계"><span class="current">정보</span><span>선별</span><span>세부검사</span><span>완료</span></div>
       <p class="eyebrow">새 검사</p>
       <h1 class="workspace-title" id="setup-title">검사 기록을 준비합니다</h1>
-      <p class="lead small">이 정보는 진단 기준이 아니라 문항 묶음과 결과 표시를 구분하기 위해 사용합니다.</p>
+      <p class="lead small">연령 구간은 진단 기준이 아니라 선별 속도 기준과 결과 표시를 고르기 위해 사용합니다.</p>
       <form id="setup-form" class="form-card">
         <label>참여자 코드<span>이름 대신 연구용 코드를 입력하세요.</span><input name="participant" required placeholder="예: P-001" maxlength="30"></label>
         <fieldset><legend>연령 구간</legend><div class="choice-grid">
@@ -91,7 +92,11 @@
           <label class="choice"><input type="radio" name="ageBand" value="청소년"><span>청소년<small>중·고등 연령</small></span></label>
           <label class="choice"><input type="radio" name="ageBand" value="성인"><span>성인<small>만 18세 이상</small></span></label>
         </div></fieldset>
-        <p class="notice" id="setup-route-note">검사할 경로는 고르지 않습니다. 다음 단계의 <b>짧은 선별검사</b> 결과로 필요한 세부 경로가 정해지고, 검사자가 확인·수정할 수 있습니다.</p>
+        <fieldset><legend>검사 분량</legend><div class="choice-grid two">
+          <label class="choice"><input type="radio" name="length" value="demo" checked><span>데모 (짧게)<small>선별 단어 4·문장 1 · 해독 8문항 · 지문 1편</small></span></label>
+          <label class="choice"><input type="radio" name="length" value="full"><span>전체<small>선별 단어 8·문장 1 · 해독 16문항 · 지문 2편</small></span></label>
+        </div></fieldset>
+        <p class="notice" id="setup-route-note">검사할 경로는 고르지 않습니다. 다음 단계의 <b>짧은 선별검사</b> 결과로 필요한 세부 경로가 정해지고, 추천을 확인해 바꿀 수 있습니다.</p>
         <label class="inline-check" id="random-order-row"><input type="checkbox" name="randomOrder"> 단어 해독 본검사 순서 무작위 (연습은 항상 먼저, 실제 제시 순서는 기록에 저장)</label>
         <button class="primary wide" type="submit">마이크 점검으로 이동</button>
       </form>
@@ -107,6 +112,7 @@
       <p class="lead small">조용한 곳에서 “오늘은 책을 읽습니다”라고 말해 보세요.</p>
       <div class="meter" aria-label="마이크 입력 수준"><span id="meter-fill"></span></div>
       <p id="mic-status" class="notice">아래 버튼을 누르면 마이크 권한을 요청합니다.</p>
+      <p id="asr-state" class="asr-state"></p>
       <div class="button-row center"><button class="primary" id="check-mic">마이크 확인</button><button class="secondary hidden" id="continue-screening">선별 단계 시작</button></div>
     </section>
   </template>
@@ -114,8 +120,8 @@
   <template id="screen-template">
     <section class="assessment-layout">
       <aside class="assessment-side"><div class="stepper vertical"><span>정보</span><span class="current">선별</span><span>세부검사</span><span>완료</span></div>
-        <ol id="screen-steps" class="screen-steps"><li data-step="words">1 단어 읽기 (8개)</li><li data-step="sentence">2 문장 읽기</li></ol>
-        <div class="side-note"><b>선별의 역할</b><p>진단이 아니라 “어디를 더 자세히 볼지” 정하는 공통 입구입니다(브리핑 v1.2 2장). 기준값은 파일럿 전 임시값입니다.</p></div></aside>
+        <ol id="screen-steps" class="screen-steps"><li data-step="words">1 단어 읽기 (8개)</li><li data-step="sentence">2 문장 읽기</li><li data-step="analyze">3 자동 분석</li></ol>
+        <div class="side-note"><b>선별의 역할</b><p>진단이 아니라 “어디를 더 자세히 볼지” 정하는 공통 입구입니다(브리핑 v1.2 2장). 읽은 소리는 시스템이 자동 채점합니다. 기준값은 파일럿 전 임시값입니다.</p></div></aside>
       <div class="assessment-main"><button class="back" data-action="back">← 마이크 점검으로</button><div id="journey" class="journey"></div><div id="screen-stage"></div></div>
     </section>
   </template>
@@ -128,7 +134,7 @@
       <p class="lead small">선별 결과에 따라 추가 확인이 필요한 경로를 추천했습니다. <b>A·B의 핵심 과제(단어 해독, 연결글 낭독)</b>는 실제로 실시·채점하고, 나머지 하위검사는 화면 흐름 미리보기입니다.</p>
       <div id="screen-summary" class="screen-summary"></div>
       <div id="route-summary" class="platform-grid"></div>
-      <p class="notice warning"><b>주의:</b> 분기 기준은 검증 전 임시값입니다(규칙 <span id="rule-version"></span>). 경로 카드의 체크를 바꿔 검사자가 조정할 수 있으며, 조정 내역은 기록에 남습니다.</p>
+      <p class="notice warning"><b>주의:</b> 분기 기준은 검증 전 임시값입니다(규칙 <span id="rule-version"></span>). 경로 카드의 체크를 바꿔 조정할 수 있으며, 조정 내역은 기록에 남습니다.</p>
       <button class="primary" id="start-assessment">첫 검사 시작</button> <button class="secondary" id="tour-previews">미리보기 화면만 둘러보기</button>
     </section>
   </template>
@@ -180,15 +186,16 @@
 
   <template id="complete-template">
     <section class="workspace narrow center">
-      <div class="completion-mark">✓</div><p class="eyebrow">녹음 완료</p><h1 class="workspace-title">검사 기록을 저장했습니다</h1>
-      <p class="lead small">녹음을 듣고 채점하면 결과지가 채워집니다. 한 사람만 채점해도 <b>잠정 결과지</b>를 볼 수 있고, 두 번째 채점자가 독립 채점하면 확정됩니다.</p>
-      <div class="button-row center"><button class="primary" data-action="open-review">지금 검토하기</button><button class="secondary" data-action="open-report">결과지 보기</button><button class="secondary" data-action="home">처음으로</button></div>
+      <div class="completion-mark">✓</div><p class="eyebrow">검사 완료</p><h1 class="workspace-title" id="complete-title">자동 채점 중입니다</h1>
+      <p class="lead small" id="complete-status">녹음을 분석하고 있습니다…</p>
+      <div class="journey-bar complete-bar"><span id="complete-bar" style="width:0%"></span></div>
+      <div class="button-row center"><button class="primary" id="complete-report" data-action="open-report" disabled>결과지 보기</button><button class="secondary hidden" id="complete-retry">다시 분석</button><button class="secondary" data-action="home">처음으로</button></div>
     </section>
   </template>
 
   <template id="review-template">
     <section class="workspace wide-workspace">
-      <div class="review-heading"><div><button class="back" data-action="back">← 뒤로</button> <button class="back" data-action="home">처음으로</button><p class="eyebrow">사람 검토</p><h1 class="workspace-title">녹음과 판정 근거 확인</h1></div><div class="review-controls"><label>검사 기록<select id="session-select" aria-label="검사 기록 선택"></select></label><label>독립 채점 슬롯<select id="rater-slot"><option value="A">채점 A</option><option value="B">채점 B</option></select></label><label>채점자 코드<input id="rater-id" maxlength="24" placeholder="예: R-A"></label><div class="review-control-actions"><button class="secondary" id="run-asr">AI 분석 (기기 안 Whisper)</button><button class="secondary" id="export-session">자료 JSON</button><label class="secondary file-button">가져오기<input type="file" id="import-session" accept="application/json,.json" hidden></label><button class="secondary" id="open-session-result">원점수 보기</button></div></div></div>
+      <div class="review-heading"><div><button class="back" data-action="back">← 뒤로</button> <button class="back" data-action="home">처음으로</button><p class="eyebrow">연구용 · 자동 채점 검증</p><h1 class="workspace-title">녹음과 자동 채점 근거 확인</h1></div><div class="review-controls"><label>검사 기록<select id="session-select" aria-label="검사 기록 선택"></select></label><label>독립 채점 슬롯<select id="rater-slot"><option value="A">채점 A</option><option value="B">채점 B</option></select></label><label>채점자 코드<input id="rater-id" maxlength="24" placeholder="예: R-A"></label><div class="review-control-actions"><button class="secondary" id="run-asr">AI 분석 (기기 안 Whisper)</button><button class="secondary" id="export-session">자료 JSON</button><label class="secondary file-button">가져오기<input type="file" id="import-session" accept="application/json,.json" hidden></label><button class="secondary" id="open-session-result">원점수 보기</button></div></div></div>
       <div id="review-empty" class="empty hidden"><h2>검토할 기록이 없습니다</h2><p>새 검사를 실시하면 녹음 항목이 여기에 표시됩니다.</p><button class="primary" data-action="new-session">새 검사 시작</button></div>
       <p id="asr-status" class="notice hidden"></p>
       <div id="review-content" class="review-layout hidden">

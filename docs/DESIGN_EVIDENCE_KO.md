@@ -1,4 +1,4 @@
-# 설계 근거서: 단어 해독·읽기 유창성 모듈 (v0.3)
+# 설계 근거서: 단어 해독·읽기 유창성 모듈 (v0.4)
 
 이 문서는 프로토타입의 설계 결정마다 **무엇을 만들었는지(코드 위치)**와 **왜 그렇게 만들었는지(근거)**를 짝지어 기록한다.
 근거는 2026-09-30에 원문 또는 공식 서지 레코드를 직접 열어 확인했다. 확인 수준은 다음과 같이 표시한다.
@@ -17,7 +17,9 @@
 |---|---|---|---|
 | 해독과 언어이해를 나눠 측정하고, 먼저 해독·유창성을 깊게 만든다 | `catalog.js` 경로 A~D, 핵심은 A·B | Simple View of Reading: Gough & Tunmer (1986); Hoover & Gough (1990) | ✅ |
 | 한국어 검사에서 해독·음운처리·유창성·이해를 핵심 영역으로 둔다 | 경로 구조 | KOLRA(배소영 외, 2015)의 소검사 구성 — 이은주(2021) 및 인천시교육청 가이드북(2025) p.17을 통해 확인 | 🔶 |
-| **AI는 후보만 만들고 최종 판정은 사람이 한다** | 모든 자동값은 "후보" 칸, 저장은 사람만 (`app.js` 검토 화면) | 자동 읽기평가와 사람 채점의 일치도가 과제에 따라 중간 수준: 단어 해독 MCC 0.43, 글 읽기 MCC 0.55 (van der Velde et al., 2025). 아동 음성의 단어 오류율은 성인의 2~5배 (Potamianos & Narayanan, 2003) | ✅ |
+| **시스템이 듣고 자동 채점한다 (사람 채점 없음)** | 녹음 → 기기 안 음성인식 → `autoDecodingRating`·`autoFluencyRating` → 결과지 (`app.js` `autoScoreResponse`) | 목적: 누구나 디지털로 쉽게 접근해 자신의 읽기 능력을 평가받고, 필요하면 대면 심층 검사로 이어지게 함 (사용자 결정, 2026-10-01). 자동 읽기평가 선행 사례: FLORA (Bolaños et al., 2011), van der Velde et al. (2025) | 📐 / ✅ |
+| 음성인식 오류는 측정 도구의 한계로 결과지에 밝힌다 | 결과지 '이 결과의 한계' | 자동-사람 일치도는 과제에 따라 중간 수준: 단어 해독 MCC 0.43, 글 읽기 MCC 0.55 (van der Velde et al., 2025). 아동 음성의 단어 오류율은 성인의 2~5배 (Potamianos & Narayanan, 2003). 일치도는 연구용 검증 화면에서 따로 측정 | ✅ |
+| 결과에 따라 대면 심층 읽기검사를 안내한다 | 결과지 '다음 단계 안내' (해독 정확도 90% 미만, 음운변동 표기대로 읽음, 낭독 정확도·속도 임시 기준 미만) | 브리핑 v1.2 1장 (선별 → 필요한 정밀 평가로 안내). 기준값은 임시값 | 📐 |
 | 진단·표준점수·백분위를 제공하지 않는다 | 결과지 8·9층 공란, "진단 아님" 문구 | 규준은 대표 표본과 신뢰도·타당도 증거가 있어야 함 — AERA·APA·NCME (2014) *Standards* (해당 조항 문구는 원문 대조 필요) | 🔶 |
 
 ## 1-1. 짧은 선별검사와 경로 추천
@@ -28,9 +30,10 @@
 | 이번 버전의 선별은 기초 해독(→A)과 유창성(→B) 두 축만 실시 | 단어 8개 + 문장 낭독 1편 | 브리핑 2장 선별 축 중 두 핵심 모듈 우선 (사용자 결정, 2026-10-01) | 📐 |
 | 선별 단어를 세부검사와 같은 2×2에서 칸마다 2개씩 뽑아 "모듈 안 중점 확인 포인트"를 정함 | `focus` (음운변동 규칙, 비단어 해독, 기초 대응, 머뭇거림, 낭독 정확도, 속도) | 해독 2×2 설계의 근거와 동일 (2장) | 📐 |
 | "정확하지만 느림 → B", "부정확 → A" | 문장 낭독 정확도와 분당 정확 음절 | 브리핑 2장 표 "정확하지만 느림 → B 유창성" | 📐 |
-| 선별은 검사자 실시간 채점, 정밀 채점은 세부검사 녹음으로 | 정확/오류/표기대로 읽음/무응답 버튼 | DIBELS 8은 검사자가 실시 중 바로 채점 (채점 안내) | ✅ |
+| 선별도 참여자가 혼자 읽고 시스템이 자동 채점 | 낱말이 뜨면 바로 녹음, '다음'으로 넘김 → 음성인식 → 자동 채점 → `screeningDecision` | 혼자 실시하는 온라인 읽기평가 선례: Yeatman et al. (2021) ROAR | 📐 / ✅ |
+| 검사 분량: 데모(선별 단어 4·해독 8문항·지문 1편)와 전체(8·16·2) | 정보 입력 화면 `length`, `LENGTHS` | 프로토타입 시연용 축소. 2×2 칸마다 2문항(선별은 1문항)을 남겨 조건 비교 구조는 유지 | 📐 |
 | 기준값은 임시값, 경계에서는 경로를 포함 (위음성 회피) | `SCREENING_CONFIG` (`screening-rule-0.2-provisional`) | 선별 도구는 민감도를 우선한다는 권고: Jenkins, Hudson & Johnson (2007) — 원문 대조 필요. 브리핑 10장: cutoff는 민감도·특이도로 파일럿 검증 후 확정 | 🔶 |
-| 검사자가 추천 경로를 바꿀 수 있고 바꾼 내역을 기록 | `session.routing` (recommended/final/added/removed) | 추천 근거와 사람 판단을 모두 남기는 원칙 (설계도 6장) | 📐 |
+| 추천 경로를 바꿀 수 있고 바꾼 내역을 기록 | `session.routing` (recommended/final/added/removed) | 추천 근거와 사람 판단을 모두 남기는 원칙 (설계도 6장) | 📐 |
 | 결과지에서 선별 신호와 세부검사 결과를 나란히 비교 | 결과지 2층 연결표 | 선별 기준 검증 자료(브리핑 10장 "선별이 필요한 세부검사를 잘 찾아내는가?") | 📐 |
 
 ## 2. 단어 해독 모듈
@@ -61,26 +64,26 @@
 | 타이머는 첫 발화부터 | 자동 발화 시작 + 사람이 마커 수정, 둘 다 저장 | 설계도 4.2, 계획서 단계 3 완료 기준 | 📐 |
 | 판단이 어려운 어절은 보류, 분자·분모에서 제외 | `unclear` 표시 | 설계도 4.4 "사투리 또는 오류가 불명확 → 자동 확정 금지" | 📐 |
 
-## 4. 기기 안 음성인식(AI 후보)
+## 4. 기기 안 음성인식과 자동 채점
 
 | 설계 결정 | 구현 | 근거 | 확인 |
 |---|---|---|---|
-| Whisper를 쓴다 | `asr.js`, `onnx-community/whisper-base_timestamped`, Transformers.js 3.8.1 | 68만 시간 다국어 약지도 학습, 한국어 포함: Radford et al. (2023) | ✅ |
-| 음성은 브라우저 밖으로 보내지 않는다 | Transformers.js가 WebAssembly로 기기에서 실행 | 연구 음성의 개인정보 보호 (설계도 6장 데이터 원칙) | 📐 |
+| Whisper를 쓴다 | `asr.js`, Transformers.js 3.8.1 | 68만 시간 다국어 약지도 학습, 한국어 포함: Radford et al. (2023) | ✅ |
+| 기본 모델은 **Whisper large-v3-turbo** (WebGPU, 4비트 양자화, 약 0.6~0.8GB 1회 다운로드). WebGPU가 없으면 Whisper small, 그다음 base | `onnx-community/whisper-large-v3-turbo_timestamped` → `whisper-small_timestamped` → `whisper-base_timestamped` | turbo는 large-v3의 디코더를 32층에서 4층으로 줄인 809M 모델로 "약간의 품질 저하로 훨씬 빠름"(OpenAI 모델 카드). 2024-10-01 공개, 다국어 성능은 large-v2와 비슷(OpenAI whisper Discussion #2363). 한국어는 CER로 평가 | ✅ |
+| 음성은 브라우저 밖으로 보내지 않는다 | 브라우저 안(WebGPU/WebAssembly)에서 실행 | 개인 음성 보호 (설계도 6장 데이터 원칙). 클라우드 STT(예: 한국어 특화 상용 API)는 정확도가 더 높을 수 있으나 음성 외부 전송과 키 관리가 필요해 이번 버전에서 제외 | 📐 |
+| 마이크 점검 때 모델을 미리 받는다 | `preloadAsr()`, 첫 화면 '음성인식 모델 미리 받기' | 검사 중·후 대기 시간 줄이기 | 📐 |
 | 단어 단위 시각 | `return_timestamps: 'word'`, 실패 시 구간 시각으로 내려감 | Whisper 교차 어텐션 정렬 헤드 + DTW: OpenAI `whisper/timing.py`; Louradour (2023) whisper-timestamped; Transformers.js 문서 | ✅ |
-| 해독: 인식 결과를 **제한된 후보**(허용 발음, 표기대로 읽음) 안에서 가장 가까운 것으로 연결 | `constrainedDecodingChoice` | 설계도 3.3 "해당 문항에서 가능한 발음만 포함한 제한된 발음 후보" | 📐 |
-| 인식 결과를 그대로 점수로 쓰지 않는다 | 사람이 "전사 칸에 넣기"를 누르고 확인해야 반영 | ASR은 반복·군말 같은 비유창성을 지우도록 학습되어 있어 축어 전사가 드물다 (Dietz et al., 2025). 환각 약 1% (Koenecke et al., 2024). 비단어를 실제 단어로 바꿔 듣는다는 직접 정량 연구는 **이번에 원문 확인 못 함** — 간접 근거만 있음 | ✅ / 🔶 |
-| 유창성: 인식 단어열을 지문 어절열에 동적계획법으로 정렬해 대치·생략·삽입 후보와 단어 시각을 만든다 | `alignWordsToPassage` (어긋남 비용 0.75 < 전면 대치 1) | 편집거리 정렬 (Levenshtein, 1966). 자동 WCPM이 사람 채점과 3~4단어 이내 (FLORA; Bolaños et al., 2011) | ✅ |
+| 해독 자동 채점: 인식 문자열을 전사 규약으로 바꾸고(띄어 쓴 조각이 목표 길이에 가까우면 다시 읽기 `/`, 짧으면 나누어 읽기 `-`) 허용 발음과 음절 정렬해 정오·오류 위치·표기대로 읽음 판정 | `asrToTranscript`, `autoDecodingRating` | 편집거리 정렬 (Levenshtein, 1966); 설계도 3장 채점 규칙 | ✅ / 📐 |
+| 유창성 자동 채점: 인식 단어열을 지문 어절열에 동적계획법으로 정렬해 대치·생략·삽입을 표시하고, 발화 탐지의 긴 멈춤을 다음 어절에 붙이며, 시간은 발화 시작~끝 | `alignWordsToPassage` (어긋남 비용 0.75 < 전면 대치 1), `autoFluencyRating` | 자동 WCPM이 사람 채점과 3~4단어 이내 (FLORA; Bolaños et al., 2011) | ✅ |
+| 알려진 음성인식 한계를 결과지에 밝힌다 | '이 결과의 한계' | ASR은 반복·군말 같은 비유창성을 지우도록 학습되어 축어 전사가 드묾 (Dietz et al., 2025). 환각 약 1% (Koenecke et al., 2024). 비단어를 실제 단어로 바꿔 듣는다는 직접 정량 연구는 **원문 확인 못 함** | ✅ / 🔶 |
 
-## 5. 채점 신뢰도
+## 5. 자동 채점 검증 (연구용)
 
 | 설계 결정 | 구현 | 근거 | 확인 |
 |---|---|---|---|
-| 두 사람이 서로의 판정을 보지 않고 독립 채점 | A/B 슬롯, 둘 다 저장 전에는 비교 안 함 | 설계도 5.1 | 📐 |
-| 일치율과 Cohen's κ를 보고 | `cohensKappa`, 결과지 7층 | Cohen (1960) | ✅ |
+| 사람 채점은 점수에 쓰지 않고 자동 채점 정확도를 검증하는 데만 쓴다 | 연구용 검증 화면(기존 검토 화면), 결과지 '자동 채점 검증' 표 | 브리핑 10장 "자동채점 일치도" 검증 단계; van der Velde et al. (2025)의 인간-자동 일치도 보고 방식 | ✅ |
+| 일치율과 Cohen's κ를 보고 | `cohensKappa`, `autoVerification` | Cohen (1960) | ✅ |
 | κ 해석 구간(약간·어느 정도·중간·상당·거의 완전) | `kappaLabel` | Landis & Koch (1977) — 관례적 구간이며 합격 기준이 아님 | ✅ (구간 표는 2차 문헌 경유) |
-| 합의 못 한 자료는 EXPERT_PENDING, 점수·정답에서 제외 | 결과지·결과 화면 | 설계도 5.2 | 📐 |
-| AI 후보와 사람 확정값의 일치도를 따로 계산 | 결과지 7층 | 브리핑 10장 "자동채점 일치도" 검증 단계; van der Velde et al. (2025)의 인간-자동 일치도 보고 방식 | ✅ |
 
 ## 6. 결과지의 분석 방법
 
@@ -101,7 +104,7 @@
 ## 8. 이번 버전에서 확인하지 못한 것 (정직하게 밝힐 부분)
 
 1. 실제 사람 목소리로 발화 탐지와 음성인식을 시험하지 않았다 (가상 마이크와 대체 모듈로만 흐름을 확인).
-2. Whisper 모델은 개발 환경의 네트워크 정책 때문에 내려받지 못해, 실제 한국어 인식 품질은 확인하지 못했다.
+2. Whisper 모델(large-v3-turbo 포함)은 개발 환경의 네트워크 정책 때문에 내려받지 못해, 실제 한국어 인식 품질과 자동 채점 정확도는 확인하지 못했다(대체 모듈로 흐름만 확인).
 3. BASA 읽기의 "1분·음절" 채점 방식, AERA 표준의 조항 문구, 표준 발음법의 공식 사이트 원문은 2차 자료나 미러로만 확인했다.
 4. 문항·지문은 기능 시험용 후보이며 전문가 검토와 파일럿 자료가 없다.
 
@@ -130,6 +133,7 @@
 - Potamianos, A., & Narayanan, S. (2003). Robust recognition of children's speech. *IEEE Transactions on Speech and Audio Processing, 11*(6), 603–616.
 - Rabiner, L. R., & Sambur, M. R. (1975). An algorithm for determining the endpoints of isolated utterances. *Bell System Technical Journal, 54*(2), 297–315.
 - Rack, J. P., Snowling, M. J., & Olson, R. K. (1992). The nonword reading deficit in developmental dyslexia: A review. *Reading Research Quarterly, 27*(1), 28–53. https://doi.org/10.2307/747832
+- OpenAI. (2024). *whisper-large-v3-turbo* [Model card]. https://huggingface.co/openai/whisper-large-v3-turbo ; Release discussion #2363. https://github.com/openai/whisper/discussions/2363
 - Radford, A., Kim, J. W., Xu, T., Brockman, G., McLeavey, C., & Sutskever, I. (2023). Robust speech recognition via large-scale weak supervision. *ICML 2023*, PMLR 202, 28492–28518. https://proceedings.mlr.press/v202/radford23a.html
 - University of Oregon. (2023). *DIBELS 8th Edition Administration and Scoring Guide.* https://dibels.uoregon.edu/sites/default/files/2024-01/dibels8_admin_scoring_guide.pdf
 - University of Oregon. (2021). *DIBELS 8 vs Previous Editions: Administration and Scoring.* https://dibels.uoregon.edu/sites/default/files/2021-06/DIBELS-8-vs-Previous-Editions-Admin-Scoring.pdf

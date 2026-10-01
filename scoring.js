@@ -469,6 +469,75 @@
     };
   }
 
+  // ---------- 음성인식 기반 자동 채점 ----------
+  // 사람 채점 없이 녹음 → 음성인식(ASR) → 이 규칙으로 문항 점수를 낸다. 결과지는 이 값을 쓴다.
+  // 음성인식 자체의 오인식은 측정 도구의 한계로 결과지 '한계'에 적는다 (사람이 고치지 않는다).
+  const AUTO_SCORING_VERSION = 'auto-asr-scoring-0.1';
+
+  // ASR 문자열을 전사 규약으로 바꾼다. 띄어 쓴 조각이 각각 목표 길이에 가까우면 다시 읽은 시도(/)로,
+  // 짧은 조각이면 나누어 읽은 것(-)으로 본다. 문장부호는 버린다.
+  function asrToTranscript(asrText, targetText) {
+    const pieces = String(asrText || '').replace(/[^\uAC00-\uD7A3\s]/g, ' ').split(/\s+/).filter(Boolean);
+    if (!pieces.length) return '무응답';
+    const targetLength = syllablesOf(targetText).length;
+    const whole = pieces.length > 1 && pieces.every(piece => syllablesOf(piece).length >= Math.max(2, Math.ceil(targetLength * 0.6)));
+    return pieces.join(whole ? '/' : '-');
+  }
+
+  // 단어 해독 한 문항: { itemScore, transcript, firstAttemptCorrect, finalAttemptCorrect, events, errorPositions, spellingRead, noResponse }
+  function autoDecodingRating(item, asrText, { speechDetected = true } = {}) {
+    const transcript = speechDetected ? asrToTranscript(asrText, item.text) : '무응답';
+    const candidate = decodingCandidate(item, transcript);
+    const attempts = candidate.attempts || [];
+    return {
+      source: 'AUTO', scoringVersion: AUTO_SCORING_VERSION, transcript, asrText: String(asrText || ''),
+      itemScore: candidate.suggestion.itemScore,
+      firstAttemptCorrect: candidate.suggestion.firstAttemptCorrect, finalAttemptCorrect: candidate.suggestion.finalAttemptCorrect,
+      events: candidate.suggestion.events,
+      errorPositions: attempts.map(attempt => attempt.ops.filter(op => op.op !== 'match').map(op => ({ op: op.op, position: op.position, target: op.target, actual: op.actual, jamo: op.jamo }))),
+      spellingRead: Boolean(attempts.length && attempts[attempts.length - 1].spellingRead),
+      noResponse: candidate.status === 'NO_RESPONSE',
+      notes: candidate.notes || []
+    };
+  }
+
+  // 읽기 유창성 한 지문: ASR 단어열을 지문에 정렬해 어절 표시(대치·생략·삽입·긴 멈춤)와 지표를 만든다.
+  // speech: 에너지 기반 발화 탐지 결과 { onsetMs, offsetMs, pauses }. 없으면 ASR 단어 시각으로 대신한다.
+  function autoFluencyRating(tokens, asrWords = [], { speech = null, recordingMs = null, asrText = '' } = {}, config = SCORING_CONFIG) {
+    const alignment = alignWordsToPassage(tokens, asrWords);
+    const marks = {};
+    const add = (index, flag) => { if (index < 0 || index >= tokens.length) return; const entry = marks[index] || { mark: 'correct', flags: [] }; if (!entry.flags.includes(flag)) entry.flags.push(flag); marks[index] = entry; };
+    for (const token of alignment.tokens) {
+      if (token.index > alignment.lastReadIndex) break;
+      if (token.status === 'sub') marks[token.index] = { mark: 'sub', flags: [], actual: token.heard };
+      if (token.status === 'omit') marks[token.index] = { mark: 'omit', flags: [] };
+    }
+    for (const insertion of alignment.insertions) if (insertion.afterIndex >= 0 && insertion.afterIndex <= alignment.lastReadIndex) add(insertion.afterIndex, 'insertAfter');
+    const timed = alignment.tokens.filter(token => token.startMs != null);
+    const onsetMs = speech?.onsetMs ?? timed[0]?.startMs ?? 0;
+    const endMs = speech?.offsetMs ?? timed[timed.length - 1]?.endMs ?? recordingMs ?? 0;
+    // 긴 멈춤: 멈춤이 끝난 뒤 처음 시작하는 어절 앞에 표시
+    for (const pause of speech?.pauses || []) {
+      const next = timed.find(token => token.startMs >= pause.endMs - 50);
+      if (next && next.index <= alignment.lastReadIndex) add(next.index, 'pauseBefore');
+    }
+    let sixtyIndex = null;
+    if (endMs - onsetMs > config.fluencyWindowMs) {
+      const at = onsetMs + config.fluencyWindowMs;
+      const before = timed.filter(token => token.startMs <= at);
+      sixtyIndex = before.length ? before[before.length - 1].index : tokenAtTime(tokens, onsetMs, endMs, at);
+    }
+    const lastIndex = alignment.lastReadIndex;
+    const metrics = lastIndex < 0 ? null : computeFluency({ tokens, marks, lastIndex, sixtyIndex, onsetMs, endMs });
+    return {
+      source: 'AUTO', scoringVersion: AUTO_SCORING_VERSION, transcript: String(asrText || ''),
+      itemScore: lastIndex < 0 ? 'UNSCORABLE' : 'VALID',
+      marks, lastIndex, sixtyIndex, sixtySource: 'auto', onsetMs, speechEndMs: endMs,
+      timing: speech?.onsetMs != null ? 'vad' : timed.length ? 'asr' : 'recording',
+      metrics, events: metrics ? Object.keys(metrics.events) : []
+    };
+  }
+
   // ---------- 비율의 불확실성 ----------
   // Wilson (1927) 점수 신뢰구간. 문항 수가 적을 때 정규근사(Wald)보다 적절하다 (Brown, Cai & DasGupta, 2001).
   function wilsonInterval(hit, n, z = 1.96) {
@@ -498,7 +567,8 @@
     tokenizePassage, computeFluency, estimateTokenTimes, tokenAtTime,
     detectSpeech, waveformPeaks, comparableRating, ratingsAgree, syllableMatches, selfCorrectionCheck, hesitationCheck,
     constrainedDecodingChoice, alignWordsToPassage, cohensKappa, kappaLabel, wilsonInterval, proportionDifference,
-    SCREENING_CONFIG, screeningDecision
+    SCREENING_CONFIG, screeningDecision,
+    AUTO_SCORING_VERSION, asrToTranscript, autoDecodingRating, autoFluencyRating
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.Scoring = api;

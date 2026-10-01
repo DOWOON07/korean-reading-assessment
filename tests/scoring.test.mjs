@@ -178,4 +178,29 @@ const inaccurate = { ...computeFluency({ tokens: sTokens, marks: { 1: { mark: 's
 sd = Scoring.screeningDecision({ words: allRight, sentence: inaccurate, ageBand: '아동' });
 assert.deepEqual(sd.paths, ['A', 'B']); assert.deepEqual(sd.focus.map(f => f.key), ['accuracy']);
 
-console.log('통과: 해독 오류 후보, 유창성 계산, 발화 탐지, 채점자 비교 단위 테스트');
+// 음성인식 기반 자동 채점
+assert.equal(Scoring.asrToTranscript('나비.', '나비'), '나비');
+assert.equal(Scoring.asrToTranscript('나 비', '나비'), '나-비');
+assert.equal(Scoring.asrToTranscript('국물 궁물', '국물'), '국물/궁물');
+assert.equal(Scoring.asrToTranscript('', '나비'), '무응답');
+const gm = { text: '국물', accepted: ['궁물'], rule: '비음화' };
+let ar = Scoring.autoDecodingRating(gm, '궁물');
+assert.equal(ar.itemScore, 'CORRECT'); assert.equal(ar.source, 'AUTO');
+ar = Scoring.autoDecodingRating(gm, '국물');
+assert.equal(ar.itemScore, 'INCORRECT'); assert.equal(ar.spellingRead, true);
+ar = Scoring.autoDecodingRating(gm, '국물 궁물');
+assert.equal(ar.itemScore, 'CORRECT'); assert.equal(ar.firstAttemptCorrect, 'INCORRECT'); assert.ok(ar.events.includes('자기수정'));
+ar = Scoring.autoDecodingRating(gm, '궁물', { speechDetected: false });
+assert.equal(ar.noResponse, true); assert.equal(ar.itemScore, 'INCORRECT');
+const fTok = tokenizePassage('동생은 공원에서 노란 공을 찼다. 공은 높이 날아갔다.');
+const fw = [['동생은', 0, 500], ['공원에서', 600, 1200], ['노랑', 1300, 1600], ['공을', 3200, 3500], ['찼다', 3600, 3900], ['공은', 4000, 4300], ['높이', 4400, 4700]]
+  .map(([text, startMs, endMs]) => ({ text, startMs, endMs }));
+const af = Scoring.autoFluencyRating(fTok, fw, { speech: { onsetMs: 0, offsetMs: 4700, pauses: [{ startMs: 1600, endMs: 3200 }] } });
+assert.equal(af.itemScore, 'VALID');
+assert.equal(af.marks[2].mark, 'sub'); assert.equal(af.marks[2].actual, '노랑');
+assert.ok(af.marks[3].flags.includes('pauseBefore'));
+assert.equal(af.lastIndex, 6); assert.equal(af.metrics.completed, false);
+assert.equal(af.metrics.correctEojeol, 6);
+assert.equal(Scoring.autoFluencyRating(fTok, []).itemScore, 'UNSCORABLE');
+
+console.log('통과: 해독 오류 후보, 유창성 계산, 발화 탐지, 채점자 비교, 자동 채점 단위 테스트');
