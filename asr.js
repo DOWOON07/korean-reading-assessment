@@ -49,6 +49,9 @@ export async function load(onProgress = () => {}) {
             if (event.status === 'ready') onProgress(`${model.label} 준비됨`);
           }
         });
+        // 예열: WebGPU는 첫 실행 때 셰이더를 컴파일하느라 느리다. 1초 무음으로 한 번 돌려 검사 중 첫 문항이 늦어지지 않게 한다.
+        onProgress(`${model.label} 예열 중`);
+        try { await transcriber(new Float32Array(16000), { language: 'korean', task: 'transcribe', max_new_tokens: 4 }); } catch {}
         loaded = { transcriber, model };
         return loaded;
       } catch (error) { lastError = error; onProgress(`${model.label} 불러오기 실패, 다음 모델 시도`); }
@@ -72,19 +75,23 @@ async function toMono16k(blob) {
   } finally { await context.close(); }
 }
 
-export async function transcribe(blob, onProgress) {
+// opts.timestamps=false: 낱말 하나를 읽는 녹음은 글자만 필요하므로 단어 시각 계산(교차 어텐션 + DTW)을 건너뛴다.
+// opts.maxNewTokens: 짧은 녹음에서 무음·잡음 때문에 같은 말을 수백 토큰 반복 생성(환각)하며 오래 걸리는 것을 막는다.
+export async function transcribe(blob, onProgress, opts = {}) {
   const { transcriber, model } = await load(onProgress);
+  const started = performance.now();
   const audio = await toMono16k(blob);
-  const options = { language: 'korean', task: 'transcribe', chunk_length_s: 30, stride_length_s: 5 };
-  let output, mode = model.mode;
+  const options = { language: 'korean', task: 'transcribe', chunk_length_s: 30, stride_length_s: 5, ...(opts.maxNewTokens ? { max_new_tokens: opts.maxNewTokens } : {}) };
+  let output, mode = opts.timestamps === false ? 'none' : model.mode;
   try {
-    output = await transcriber(audio, { ...options, return_timestamps: mode === 'word' ? 'word' : true });
+    output = await transcriber(audio, { ...options, return_timestamps: mode === 'word' ? 'word' : mode !== 'none' });
   } catch (error) {
     // 정렬 헤드가 없다는 오류 등: 구간 시각으로 다시 시도
+    if (mode === 'none') throw error;
     mode = 'segment';
     output = await transcriber(audio, { ...options, return_timestamps: true });
   }
-  const words = (output.chunks || []).flatMap(chunk => {
+  const words = mode === 'none' ? [] : (output.chunks || []).flatMap(chunk => {
     const [start, end] = chunk.timestamp || [];
     const pieces = mode === 'word' ? [chunk.text] : String(chunk.text).trim().split(/\s+/);
     // 구간 시각만 있으면 구간을 단어 수로 나눈 추정 시각을 붙이고 estimated 표시를 남긴다.
@@ -95,5 +102,5 @@ export async function transcribe(blob, onProgress) {
       return { text: text.trim(), startMs: s == null ? null : Math.round(s * 1000), endMs: e == null ? null : Math.round(e * 1000), estimated: mode !== 'word' };
     });
   });
-  return { status: 'DONE', text: String(output.text || '').trim(), words, model: model.id, modelLabel: model.label, device: model.device, library: LIBRARY, timestampMode: mode, language: 'ko', createdAt: new Date().toISOString() };
+  return { status: 'DONE', text: String(output.text || '').trim(), words, model: model.id, modelLabel: model.label, device: model.device, library: LIBRARY, timestampMode: mode, elapsedMs: Math.round(performance.now() - started), audioSeconds: +(audio.length / 16000).toFixed(1), language: 'ko', createdAt: new Date().toISOString() };
 }

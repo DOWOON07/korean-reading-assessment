@@ -201,7 +201,7 @@ const CHOICE_MODULES = {
 
 // 하위검사 이름 (경로 카드·결과지 공통)
 const CHOICE_SUBTEST_TITLES = {
-  'A-phon': '음운인식', 'A-letter': '글자-소리 대응', 'B-lexical': '단어 재인(어휘판단)', 'B-silent': '묵독 효율(문장 참·거짓)',
+  'A-phon': '음운인식', 'A-letter': '글자-소리 대응', 'B-lexical': '단어 자동성 (단어 재인)', 'B-silent': '묵독 효율(문장 참·거짓)',
   'C-vocab': '어휘', 'C-sentence': '문장 이해', 'C-listen': '듣기 이해', 'C-morph': '형태소 인식',
   'D-fact': '사실 이해', 'D-infer': '추론', 'D-eval': '평가·판단', 'D-multi': '복수 글 비교·출처 평가'
 };

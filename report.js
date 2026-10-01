@@ -39,7 +39,7 @@ function report() {
   if (preferred && list.some(session => session.id === preferred)) select.value = preferred;
   const current = () => list.find(session => session.id === select.value) || list[0];
   // 모듈별 검사 기록은 그 모듈 결과지를 기본으로 연다.
-  const defaultScope = session => session.modules.length === 1 ? session.modules[0] : 'all';
+  const defaultScope = session => session.mode === 'module' && session.modules.length ? session.modules[0] : 'all';
   scope.value = defaultScope(current());
   const draw = () => { sessionStorage.setItem('readingResultSession', select.value); drawReport(current(), scope.value); };
   select.onchange = () => { scope.value = defaultScope(current()); draw(); };
@@ -320,6 +320,34 @@ function screeningLinkRows(session, d, f) {
   <p class="quiet">선별과 세부검사 모두 음성인식 자동 채점값입니다. 두 결과가 다르면 선별 기준(임시값)을 조정할 근거 자료가 됩니다. 선별이 세부검사 결과를 얼마나 잘 찾아내는지(민감도·특이도)는 파일럿에서 검증합니다(브리핑 v1.2 10장).</p>`;
 }
 
+// 연결글의 음운규칙 필요 어절(표준 발음법상 표기와 발음이 다른 자리, S.ruleSites)과 그 밖의 어절의 오류율을 비교한다.
+function ruleFinding(rs) {
+  const a = rs.rule, b = rs.plain;
+  const diff = S.proportionDifference(a.n - a.err, a.n, b.n - b.err, b.n);
+  const byRule = Object.entries(rs.byRule).map(([rule, v]) => `${rule} ${v.err}/${v.n}`).join(' · ');
+  return finding('음운규칙 필요 위치의 오류', `규칙 필요 어절 오류 ${a.err}/${a.n} · 그 밖의 어절 오류 ${b.err}/${b.n}${byRule ? ` · 규칙별 ${byRule}` : ''}${rs.missed.length ? ` · 오류 어절: ${rs.missed.slice(0, 6).join(', ')}` : ''}`,
+    diff?.excludesZero && diff.diff < 0 ? `규칙 필요 어절의 정확도가 그 밖의 어절보다 낮습니다(차이 ${diff.diff}%p, 95% CI ${diff.low}~${diff.high}). 연결글에서도 음운변동 적용에 어려움이 있다는 가설을 세울 수 있습니다.` : `규칙 필요 어절과 그 밖의 어절의 정확도 차이를 이 문항 수로는 확정할 수 없습니다${diff ? ` (차이 ${diff.diff}%p, 95% CI ${diff.low}~${diff.high})` : ''}. 해독 모듈의 음운변동 조건 결과와 함께 보세요.`,
+    '표준 발음법 제12·17~20·23항; KOLRA 불일치형 규칙(이은주, 2021); Newcombe (1998)', diff?.excludesZero && diff.diff < 0 ? 'attention' : 'info');
+}
+
+function fluencyRuleStats(f) {
+  const out = { rule: { n: 0, err: 0 }, plain: { n: 0, err: 0 }, byRule: {}, missed: [] };
+  for (const passage of f.done) {
+    const last = passage.final.lastIndex ?? passage.tokens.length - 1;
+    for (const token of passage.tokens.filter(t => t.index <= last)) {
+      const sites = S.ruleSites(token.surface);
+      const mark = passage.final.marks?.[token.index];
+      if (mark?.mark === 'unclear') continue;
+      const error = Boolean(S.FLUENCY_MARKS[mark?.mark]?.error);
+      const bucket = sites.length ? out.rule : out.plain;
+      bucket.n++; if (error) bucket.err++;
+      for (const site of sites) { out.byRule[site.rule] ||= { n: 0, err: 0 }; out.byRule[site.rule].n++; if (error) out.byRule[site.rule].err++; }
+      if (sites.length && error) out.missed.push(`${token.surface}(${sites.map(site => site.rule).join('·')})`);
+    }
+  }
+  return out;
+}
+
 // ---------- 선택형 하위검사 (battery.js) ----------
 const CHOICE_SCOPES = ['phonology', 'silent', 'language', 'comprehension'];
 const CHOICE_REFER_PCT = 70; // 추가 확인 권고 임시 기준 (규준 없음)
@@ -498,6 +526,9 @@ function drawReport(original, scope = 'all') {
   const d = decodingStats(session);
   const f = fluencyStats(session);
   const c = choiceStats(original);
+  const rs = fluencyRuleStats(f);
+  const paired = { decoding: 'phonology', fluency: 'silent' }[scope];
+  const pathId = { decoding: 'A', fluency: 'B' }[scope];
   const verify = autoVerification(original);
   const scored = scoredResponses(session);
   const previewed = new Set(session.previewLog || []);
@@ -511,7 +542,7 @@ function drawReport(original, scope = 'all') {
       case 'A-rule': return d.consistent.n || d.phonological.n ? `일치 ${d.consistent.pct ?? '–'}% · 음운변동 ${d.phonological.pct ?? '–'}%` : blank;
       case 'B-oral': return f.done.length ? `정확도 ${f.accuracyEojeol}% · 분당 정확 음절 ${f.syllablesPerMin}` : blank;
       case 'B-error': return f.done.length ? Object.entries(f.events).map(([name, count]) => `${name} ${count}`).join(', ') || '오류 없음' : blank;
-      case 'B-rule': return d.phonological.n ? `음운변동 문항 오류 ${d.phonological.n - d.phonological.hit} · 표기대로 읽음 ${d.spellingReads}` : blank;
+      case 'B-rule': return rs.rule.n ? `규칙 필요 어절 오류 ${rs.rule.err}/${rs.rule.n} · 그 밖의 어절 오류 ${rs.plain.err}/${rs.plain.n}` : d.phonological.n ? `음운변동 문항 오류 ${d.phonological.n - d.phonological.hit} · 표기대로 읽음 ${d.spellingReads}` : blank;
       default: {
         const r = c.bySubtest[subtest.id];
         if (!r) return blank;
@@ -538,9 +569,10 @@ function drawReport(original, scope = 'all') {
   }).join('');
 
 
-  const title = scope === 'decoding' ? '단어 해독 결과지' : scope === 'fluency' ? '읽기 유창성 결과지' : '한국어 읽기평가 결과지';
-  const subtitle = scope === 'all' ? 'Blueprint v1.2 결과지 구조 · 핵심 모듈(A 해독, B 유창성)만 원점수 제공' : `모듈별 결과지 · ${scope === 'decoding' ? 'A 경로 단어 해독(실제단어·비단어 × 표기 일치·음운변동)' : 'B 경로 연결글 낭독(정확도·속도·오류)'}`;
-  const hasData = (showD && d.decoding.length) || (showF && f.passages.length);
+  const pathInfo = PLATFORM_PATHS.find(path => path.id === pathId);
+  const title = scope === 'decoding' ? (c.modules.phonology ? '글자·소리 처리와 단어 해독 결과지' : '단어 해독 결과지') : scope === 'fluency' ? '읽기 유창성 결과지' : '한국어 읽기평가 결과지';
+  const subtitle = scope === 'all' ? 'Blueprint v1.2 결과지 구조 · 경로 A~D 하위검사' : `경로 ${pathId} 결과지 · ${pathInfo.subtests.map(subtest => subtest.title).join(' · ')}`;
+  const hasData = (showD && d.decoding.length) || (showF && f.passages.length) || (paired && c.modules[paired]);
   const filterLines = lines => lines.filter(line => (showD || !line.startsWith('단어 해독')) && (showF || !line.startsWith('읽기 유창성') && !line.startsWith('유창성')));
   const decodingErrors = `<div><h4>단어 해독 오류 사건</h4><div class="bars">${eventBars(d.events, d.usable.length)}</div>
         <h4>대치된 자리 (음절 안 위치)</h4><div class="bars">${positionTotal ? `${barRow('초성', d.positions.cho, { max: positionTotal, unit: '회' })}${barRow('중성', d.positions.jung, { max: positionTotal, unit: '회' })}${barRow('받침', d.positions.jong, { max: positionTotal, unit: '회' })}${barRow('음절 생략·삽입', d.positions.whole, { max: positionTotal, unit: '회' })}` : '<p class="quiet">기록된 위치 없음</p>'}</div></div>`;
@@ -564,6 +596,9 @@ function drawReport(original, scope = 'all') {
     <ul class="summary-list">${filterLines(summarySentences(d, f)).map(line => `<li>${esc(line)}</li>`).join('')}</ul>
     ${full ? screeningLinkRows(session, d, f) : ''}
     <p class="quiet">${full ? '강점·상대적 취약 영역 판단은 영역별 신뢰도와 규준이 확보된 뒤 제공합니다. 현재는 두 핵심 모듈 안의 조건 비교만 기술합니다. 추가 확인이 필요한 영역: 글자·소리(음운인식, 자모), 언어 이해, 글 이해 (미실시).' : '이 결과지는 한 모듈의 원점수와 오류 근거만 보여 줍니다. 다른 영역의 수행은 평가하지 않았습니다.'}</p>`);
+  if (pathInfo) add(`경로 ${pathId} 하위검사 ${pathInfo.subtests.length}개 한눈에`, `<div class="table-wrap"><table class="item-table"><thead><tr><th>하위검사</th><th>측정</th><th>결과 (원점수)</th><th>근거</th></tr></thead><tbody>${pathInfo.subtests.map(subtest => `<tr><td><b>${esc(subtest.title)}</b></td><td>${esc(subtest.measure)}</td><td>${subtestResult(subtest)}</td><td class="quiet">${esc(subtest.basis || '')}</td></tr>`).join('')}</tbody></table></div>
+    <p class="quiet">브리핑 v1.2 경로 ${pathId}의 하위검사입니다. ${pathId === 'A' ? '실제단어·무의미단어·일치/불일치는 KOLRA처럼 한 번의 낱말 읽기 과제 안의 조건으로 측정합니다.' : '연결글 낭독·오류 분석·음운규칙 분석은 같은 낭독 녹음에서 계산합니다.'}</p>`);
+  if (paired && c.modules[paired]) add(`${CHOICE_MODULES[paired].title} (녹음 없음)`, `${choiceTableHtml(c, [paired])}${findingsHtml(choiceFindings(c, paired), '분석')}`);
   const mod = key => c.modules[key];
   if (full) add('5영역 프로파일', `
     <div class="bars">${barRow('글자·소리', mod('phonology')?.pct, { note: mod('phonology') ? `${mod('phonology').correct}/${mod('phonology').n}문항` : '' })}${barRow('해독', d.all.pct, { note: d.all.n ? `${d.all.hit}/${d.all.n}문항` : '' })}${barRow('유창성', f.accuracyEojeol, { note: f.done.length ? `낭독 어절 정확도 · 분당 ${f.eojeolPerMin}어절` : (c.silent ? `묵독 효율 ${c.silent.efficiency}` : '') })}${barRow('언어 이해', mod('language')?.pct, { note: mod('language') ? `${mod('language').correct}/${mod('language').n}문항` : '' })}${barRow('글 이해', mod('comprehension')?.pct, { note: mod('comprehension') ? `${mod('comprehension').correct}/${mod('comprehension').n}문항` : '' })}</div>
@@ -582,7 +617,7 @@ function drawReport(original, scope = 'all') {
     <div class="report-grid ${showD && showF ? 'two' : 'one'}">${showD ? decodingErrors : ''}${showF ? fluencyErrors : ''}</div>
     ${showF ? f.done.map(passage => `<h4>오류 지도 · ${esc(passage.response.stimulusId)} ${esc(passage.response.kind)}</h4><div class="passage-map static">${passageMapHtml(passage.tokens, { marks: passage.final.marks || {}, lastIndex: passage.final.lastIndex, sixtyIndex: passage.final.sixtyIndex }, { interactive: false })}</div>`).join('') : ''}
     ${showF ? '<p class="quiet">범례: 노란 물결 밑줄 대치(작은 글씨는 실제로 읽은 말) · 빨간 취소선 생략 · 보라 도움 제공 · 회색 판정 보류 · R 반복 · SC 자기수정 · 오른쪽 파란 선 삽입 · 왼쪽 점선 긴 멈춤</p>' : ''}
-    ${findingsHtml([...(showD ? dFind.filter(item => ['오류가 난 자리', '자기수정'].includes(item.title)) : []), ...(showF ? fFind.filter(item => ['어절 안의 오류 위치', '오류 구성'].includes(item.title)) : [])], '분석 · 오류 양상')}`);
+    ${findingsHtml([...(showD ? dFind.filter(item => ['오류가 난 자리', '자기수정'].includes(item.title)) : []), ...(showF ? fFind.filter(item => ['어절 안의 오류 위치', '오류 구성'].includes(item.title)) : []), ...(showF && rs.rule.n && rs.plain.n ? [ruleFinding(rs)] : [])], '분석 · 오류 양상')}`);
   add('수행 효율', `
     <div class="report-grid ${showD && showF ? 'two' : 'one'}">${showD ? latency : ''}${showF ? fluencyTable : ''}</div>
     ${findingsHtml([...(showD ? dFind.filter(item => item.title === '반응 시작 시간') : []), ...(showF ? fFind.filter(item => ['정확도와 속도', '첫 60초와 전체'].includes(item.title)) : [])], '분석 · 수행 효율')}`);
@@ -595,7 +630,7 @@ function drawReport(original, scope = 'all') {
     <div class="report-grid three"><div><small>표준점수</small><b>${blank}</b></div><div><small>백분위</small><b>${blank}</b></div><div><small>필요 지원 수준</small><b>${blank}</b></div></div>
     <p class="quiet">대표 표본 규준과 신뢰도·타당도 자료가 없어 제공하지 않습니다.</p>`, 'muted-layer');
   if (full) add('변화 추적 *', `<p>${blank}</p><p class="quiet">동형 검사 또는 공통 척도와 측정의 표준오차(SEM)가 확보된 뒤 재검사 변화를 보고합니다.</p>`, 'muted-layer');
-  add('다음 단계 안내', `${nextStepHtml(session, d, f, showD, showF)}${full && choiceModules.length ? choiceNextStep(c, choiceModules) : ''}`);
+  add('다음 단계 안내', `${nextStepHtml(session, d, f, showD, showF)}${full && choiceModules.length ? choiceNextStep(c, choiceModules) : ''}${paired && c.modules[paired] ? choiceNextStep(c, [paired]) : ''}`);
   add('이 결과의 한계', `
     <ul class="summary-list limits">
       <li><b>음성인식 정확도:</b> 점수는 ${esc(session.sttModelLabel || '기기 안 Whisper')} 음성인식 결과로 자동 채점했습니다. 음성인식은 비단어를 비슷한 실제 단어로 바꿔 듣거나, 아동 음성·사투리·잡음에서 틀릴 수 있어 실제보다 오류가 많거나 적게 잡힐 수 있습니다. 이는 측정 도구의 한계이며, 자동 채점과 전문가 채점의 일치도는 파일럿에서 따로 검증합니다(${REFS.asr}).</li>
@@ -603,6 +638,8 @@ function drawReport(original, scope = 'all') {
       <li><b>규준 없음:</b> 한국어 연령 규준이 없어 백분위·표준점수를 제공하지 않습니다. 기준값은 모두 임시값입니다.</li>
       <li><b>문항:</b> 문항과 지문은 기능 시험용 후보이며 난이도·동형성${showD ? '·비단어 적절성' : ''}이 검증되지 않았습니다.${session.length === 'demo' ? ' 이번 검사는 데모 분량(문항 수 축소)이라 결과의 불확실성이 더 큽니다.' : ''}</li>
       <li><b>시간 지표:</b> 반응 시작 시간과 낭독 구간은 에너지 기반 발화 탐지로 추정했습니다. 잡음이 크면 구간이 어긋날 수 있습니다.</li>
+      ${paired && c.modules[paired] ? '<li><b>선택형 하위검사:</b> 형식은 공인 검사를 따랐지만 문항은 새로 만든 후보이며, 찍어서 맞힐 수 있어 우연 정답률을 함께 표시했습니다. 듣기 문항은 브라우저 합성 음성이라 기기마다 소리가 다를 수 있습니다.</li>' : ''}
+      ${showF && rs.rule.n ? '<li><b>음운규칙 위치:</b> 규칙 필요 어절은 표준 발음법 규칙으로 자동 표시했으며 단어별 예외(사전 발음)는 반영하지 않았습니다. 음성인식은 들은 말을 표준 표기로 적는 경향이 있어 “표기대로 읽음”을 놓칠 수 있습니다.</li>' : ''}
       ${full ? '<li><b>미실시 영역:</b> 글자·소리 일부, 언어 이해, 글 이해는 평가하지 않았으므로 결과가 없다는 것이 수행에 문제가 없다는 뜻은 아닙니다.</li>' : ''}
       <li><b>조건 비교:</b> 95% 신뢰구간이 0을 포함하지 않을 때만 "차이가 있다"고 적었습니다. 문항 수가 적어 대부분의 차이는 방향만 참고해야 합니다.</li>
     </ul>`);

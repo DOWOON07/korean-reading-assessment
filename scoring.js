@@ -541,6 +541,35 @@
   // ---------- 선택형 하위검사 요약 ----------
   // answers: [{ correct, rtMs, type, timedOut, noResponse }] (연습 제외). 시간 초과로 보지 못한 문항은 answers에 없다.
   // efficiency: TOSREC처럼 제한 시간 안의 (정답 수 - 오답 수). 무작위로 누른 점수를 상쇄한다.
+  // ---------- 음운규칙 필요 위치 (표준 발음법) ----------
+  // 어절 안에서 앞 음절 받침과 뒤 음절 첫소리가 만나 표기와 발음이 달라지는 자리를 찾는다.
+  // KOLRA 불일치형 문항의 규칙(된소리되기·비음화·구개음화·유음화·ㅎ탈락·기식음화)에 맞춰 연음은 넣지 않는다.
+  const REP_K = ['ㄱ', 'ㄲ', 'ㅋ', 'ㄳ', 'ㄺ'], REP_T = ['ㄷ', 'ㅅ', 'ㅆ', 'ㅈ', 'ㅊ', 'ㅌ'], REP_P = ['ㅂ', 'ㅍ', 'ㄼ', 'ㄿ', 'ㅄ'];
+  const OBSTRUENT_CODA = [...REP_K, ...REP_T, ...REP_P];
+  function ruleAt(a, b) {
+    const { jong } = a, { cho, jung } = b;
+    if (!jong) return null;
+    if (['ㄷ', 'ㅌ', 'ㄾ'].includes(jong) && cho === 'ㅇ' && jung === 'ㅣ') return '구개음화'; // 제17항
+    if (['ㄷ'].includes(jong) && cho === 'ㅎ' && jung === 'ㅣ') return '구개음화';
+    if (['ㅎ', 'ㄶ', 'ㅀ'].includes(jong) && cho === 'ㅇ') return 'ㅎ탈락'; // 제12항 4
+    if (['ㅎ', 'ㄶ', 'ㅀ'].includes(jong) && ['ㄱ', 'ㄷ', 'ㅈ'].includes(cho)) return '기식음화'; // 제12항 1
+    if (OBSTRUENT_CODA.includes(jong) && cho === 'ㅎ') return '기식음화';
+    if (OBSTRUENT_CODA.includes(jong) && ['ㄴ', 'ㅁ'].includes(cho)) return '비음화'; // 제18항
+    if (['ㅁ', 'ㅇ'].includes(jong) && cho === 'ㄹ') return '비음화'; // 제19항
+    if ((['ㄴ'].includes(jong) && cho === 'ㄹ') || (['ㄹ', 'ㄾ', 'ㅀ'].includes(jong) && cho === 'ㄴ')) return '유음화'; // 제20항
+    if (OBSTRUENT_CODA.includes(jong) && ['ㄱ', 'ㄷ', 'ㅂ', 'ㅅ', 'ㅈ'].includes(cho)) return '된소리되기'; // 제23항
+    return null;
+  }
+  function ruleSites(word) {
+    const syllables = [...String(word)].filter(ch => ch >= '가' && ch <= '힣');
+    const sites = [];
+    for (let i = 0; i + 1 < syllables.length; i++) {
+      const rule = ruleAt(decompose(syllables[i]), decompose(syllables[i + 1]));
+      if (rule) sites.push({ index: i, rule, pair: syllables[i] + syllables[i + 1] });
+    }
+    return sites;
+  }
+
   function choiceSummary(answers = []) {
     const attempted = answers.filter(answer => !answer.noResponse);
     const correct = answers.filter(answer => answer.correct).length;
@@ -613,7 +642,7 @@
     constrainedDecodingChoice, alignWordsToPassage, cohensKappa, kappaLabel, wilsonInterval, proportionDifference,
     SCREENING_CONFIG, screeningDecision,
     AUTO_SCORING_VERSION, asrToTranscript, autoDecodingRating, autoFluencyRating,
-    choiceSummary, inverseNormal, dPrime
+    choiceSummary, inverseNormal, dPrime, ruleSites
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.Scoring = api;

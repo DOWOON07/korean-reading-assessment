@@ -1,6 +1,6 @@
 {
   "name": "korean-reading-assessment-prototype",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "한국어 단어 해독·읽기 유창성 연구용 웹 프로토타입",
   "scripts": {

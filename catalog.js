@@ -6,18 +6,18 @@ const PLATFORM_PATHS = [
     id: 'A', title: '글자·소리 처리와 단어 해독', screening: 'decoding', subtests: [
       { id: 'A-phon', title: '음운인식', status: 'core', module: 'phonology', measure: '정답 수 · 정확도 (음절 탈락·음소 탈락·음소 대치)', report: '음운 조작 수행', basis: 'KOLRA 음운처리 영역; CTOPP-2 탈락 과제 형식' },
       { id: 'A-letter', title: '글자-소리 대응', status: 'core', module: 'phonology', measure: '정확도 (초성·받침·모음 최소대립)', report: '글자-소리 대응 수행', basis: '한글 초기 읽기, 글자-소리 대응 원리' },
-      { id: 'A-real', title: '실제단어 읽기', status: 'core', module: 'decoding', measure: '단어·음절 정확도', report: '익숙한 단어 해독' },
-      { id: 'A-nonword', title: '무의미단어 읽기', status: 'core', module: 'decoding', measure: '단어·음절 정확도', report: '어휘 도움 없는 해독' },
-      { id: 'A-rule', title: '일치/불일치(음운변동) 조건', status: 'core', module: 'decoding', measure: '조건별 정확도·오류', report: '음운규칙 필요 조건의 수행 차' }
+      { id: 'A-real', title: '실제단어 읽기', status: 'core', module: 'decoding', measure: '단어·음절 정확도', report: '익숙한 단어 해독', basis: 'KOLRA 해독 의미낱말 40문항; RA-RCP 단어인지' },
+      { id: 'A-nonword', title: '무의미단어 읽기', status: 'core', module: 'decoding', measure: '단어·음절 정확도', report: '어휘 도움 없는 해독', basis: 'KOLRA 무의미낱말 40문항; Rack 외 (1992) 비단어 읽기' },
+      { id: 'A-rule', title: '일치/불일치(음운변동) 조건', status: 'core', module: 'decoding', measure: '조건별 정확도·오류', report: '음운규칙 필요 조건의 수행 차', basis: 'KOLRA 일치·불일치형(된소리되기·비음화·구개음화·유음화·ㅎ탈락·기식음화); 표준 발음법' }
     ]
   },
   {
     id: 'B', title: '읽기 유창성', screening: 'fluency', subtests: [
-      { id: 'B-lexical', title: '단어 재인(어휘판단)', status: 'core', module: 'silent', measure: '정확도 · d′ · 반응 시간', report: '단어 자동 재인', basis: 'ROAR 단어 재인 과제 (Yeatman 외, 2021)' },
+      { id: 'B-lexical', title: '단어 자동성 (단어 재인)', status: 'core', module: 'silent', measure: '정확도 · d′ · 반응 시간', report: '단어 자동 재인', basis: 'ROAR 단어 재인 과제 (Yeatman 외, 2021)' },
       { id: 'B-silent', title: '묵독 효율(문장 참·거짓)', status: 'core', module: 'silent', measure: '제한 시간 안 정답 - 오답', report: '소리 내지 않고 읽는 효율', basis: 'TOSREC 문장 검증 형식 (Wagner 외, 2010)' },
-      { id: 'B-oral', title: '연결글 낭독', status: 'core', module: 'fluency', measure: '정확 음절·어절 + 시간', report: '유창성 수준' },
-      { id: 'B-error', title: '오류 분석', status: 'core', module: 'fluency', measure: '오류 위치·시각', report: '오류 프로파일' },
-      { id: 'B-rule', title: '음운규칙 분석', status: 'core', module: 'decoding', measure: '규칙 필요 위치의 오류', report: '반복되는 조건별 오류' }
+      { id: 'B-oral', title: '연결글 낭독', status: 'core', module: 'fluency', measure: '정확 음절·어절 + 시간', report: '유창성 수준', basis: 'KOLRA 문단글 읽기유창성(정확 음절·시간); BASA 1분 읽기; DIBELS 8 ORF' },
+      { id: 'B-error', title: '오류 분석', status: 'core', module: 'fluency', measure: '오류 위치·시각', report: '오류 프로파일', basis: 'DIBELS 8 ORF 채점 규칙(대치·생략·삽입·반복·자기수정)' },
+      { id: 'B-rule', title: '음운규칙 분석', status: 'core', module: 'fluency', measure: '규칙 필요 위치의 오류', report: '반복되는 조건별 오류', basis: '표준 발음법 제12·17~20·23항; KOLRA 불일치형 규칙' }
     ]
   },
   {

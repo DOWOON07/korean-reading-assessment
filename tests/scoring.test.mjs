@@ -213,4 +213,8 @@ assert.ok(Math.abs(Scoring.inverseNormal(0.5)) < 1e-9);
 const dp = Scoring.dPrime({ hits: 8, signalN: 10, falseAlarms: 2, noiseN: 10 });
 assert.equal(dp.hitRate, 0.8); assert.ok(Math.abs(dp.dPrime - 1.49) < 0.02, `d' ${dp.dPrime}`);
 
-console.log('통과: 해독 오류 후보, 유창성 계산, 발화 탐지, 채점자 비교, 자동 채점, 선택형 요약·d′ 단위 테스트');
+// 음운규칙 필요 위치 (표준 발음법)
+for (const [word, rule] of [['국물', '비음화'], ['같이', '구개음화'], ['설날', '유음화'], ['국밥', '된소리되기'], ['좋고', '기식음화'], ['놓아', 'ㅎ탈락'], ['담력', '비음화']]) assert.equal(Scoring.ruleSites(word)[0]?.rule, rule, word);
+assert.equal(Scoring.ruleSites('나무').length, 0); assert.equal(Scoring.ruleSites('우산을').length, 0);
+
+console.log('통과: 해독 오류 후보, 유창성 계산, 발화 탐지, 채점자 비교, 자동 채점, 선택형 요약·d′·음운규칙 위치 단위 테스트');

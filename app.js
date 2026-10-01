@@ -114,6 +114,11 @@ const RECORDING_MODULES = ['decoding', 'fluency'];
 const isChoiceModule = module => Boolean(CHOICE_MODULES[module]);
 // 경로(브리핑 v1.2 A~D)마다 실시하는 모듈
 const PATH_MODULES = { A: ['decoding', 'phonology'], B: ['fluency', 'silent'], C: ['language'], D: ['comprehension'] };
+// 모듈별 검사 카드는 경로 단위로 실시한다: A 카드 = 단어 해독(녹음) + 글자·소리 처리, B 카드 = 낭독(녹음) + 단어 자동성·묵독.
+// 브리핑 v1.2의 경로 A·B 하위검사를 한 번에 모두 실시하고 한 장의 결과지로 본다. 녹음 과제를 먼저 하고, 선택형 과제를 하는 동안 음성인식이 뒤에서 채점한다.
+const MODULE_GROUP = { decoding: PATH_MODULES.A, fluency: PATH_MODULES.B };
+const GROUP_NAMES = { decoding: 'A 글자·소리 처리와 단어 해독', fluency: 'B 읽기 유창성' };
+const groupName = module => GROUP_NAMES[module] || moduleName(module);
 const modulesForPaths = paths => Object.keys(MODULE_NAMES).filter(module => paths.some(path => PATH_MODULES[path]?.includes(module)));
 const scoredResponses = session => (session.responses || []).filter(response => !response.practice);
 
@@ -257,8 +262,8 @@ function home() {
 function setup() {
   const setupMode = state.setupMode || { mode: 'full' };
   if (setupMode.mode === 'module') {
-    $('#setup-title').textContent = `${moduleName(setupMode.module)} 검사를 준비합니다`;
-    $('#setup-route-note').innerHTML = `선별 없이 <b>${esc(moduleName(setupMode.module))}</b> 모듈만 실시하고, 끝나면 이 모듈의 결과지만 봅니다.${isChoiceModule(setupMode.module) ? ' 녹음 없이 보기를 눌러 답하는 검사입니다.' : ''}`;
+    $('#setup-title').textContent = `${groupName(setupMode.module)} 검사를 준비합니다`;
+    $('#setup-route-note').innerHTML = `선별 없이 <b>${esc(groupName(setupMode.module))}</b>${MODULE_GROUP[setupMode.module] ? ` (${MODULE_GROUP[setupMode.module].map(moduleName).join(' + ')})` : ''}만 실시하고, 끝나면 이 경로의 결과지를 봅니다.${isChoiceModule(setupMode.module) ? ' 녹음 없이 보기를 눌러 답하는 검사입니다.' : ''}`;
     if (isChoiceModule(setupMode.module)) $('#setup-form button[type=submit]').textContent = '검사 시작';
     $$('.stepper span').forEach((span, i) => { if (i === 1) span.textContent = isChoiceModule(setupMode.module) ? '검사' : '장치 점검'; });
     if (setupMode.module !== 'decoding') $('#random-order-row').classList.add('hidden');
@@ -269,7 +274,7 @@ function setup() {
     const moduleMode = setupMode.mode === 'module';
     // 전체 흐름이면 실시할 모듈과 경로는 선별 결과로 정한다 (screen → route).
     state.session = {
-      id: uid(), participant: form.get('participant').trim(), ageBand: form.get('ageBand'), mode: setupMode.mode, modules: moduleMode ? [setupMode.module] : [], orderPolicy: form.get('randomOrder') ? 'random' : 'fixed', previewPaths: [], length: form.get('length') || 'demo',
+      id: uid(), participant: form.get('participant').trim(), ageBand: form.get('ageBand'), mode: setupMode.mode, modules: moduleMode ? [...(MODULE_GROUP[setupMode.module] || [setupMode.module])] : [], orderPolicy: form.get('randomOrder') ? 'random' : 'fixed', previewPaths: [], length: form.get('length') || 'demo',
       createdAt: now(), updatedAt: now(), screening: {}, responses: [], status: 'CREATED',
       formVersion: CONTENT_VERSION, policyVersion: POLICY_VERSION, ratingVersion: RATING_VERSION, pronunciationDictVersion: PRONUNCIATION_DICT_VERSION,
       sttModelVersion: 'not-connected', schemaVersion: '0.2',
@@ -422,7 +427,10 @@ function screen() {
     try { clip = await startClip(); } catch { return failMic(); }
     $('#clip-next').onclick = async () => {
       $('#clip-next').disabled = true;
-      clips.push({ item, kind: 'word', shownAt, recordingStartedAt: clip.startedAt, blob: await clip.stop() });
+      const done = { item, kind: 'word', shownAt, recordingStartedAt: clip.startedAt, blob: await clip.stop() };
+      done.asrPromise = transcribeQueued(done.blob, undefined, WORD_ASR); // 다음 낱말을 읽는 동안 미리 분석
+      done.asrPromise.catch(() => {});
+      clips.push(done);
       words(index + 1);
     };
   };
@@ -456,7 +464,7 @@ function screen() {
         clip.quality = await analyzeAudio(clip.blob);
         clip.audioKey = `${session.id}-screen-${clip.item.id}`;
         await saveBlob(clip.audioKey, clip.blob).catch(() => { clip.audioKey = null; });
-        clip.asr = await (await getAsr()).transcribe(clip.blob, message => { status.textContent = `분석 ${i + 1} / ${clips.length} · ${message}`; });
+        clip.asr = await (clip.asrPromise || transcribeQueued(clip.blob, message => { status.textContent = `분석 ${i + 1} / ${clips.length} · ${message}`; })).catch(() => transcribeQueued(clip.blob, undefined, clip.kind === 'word' ? WORD_ASR : {}));
         noteAsrModel(clip.asr);
       }
     } catch (error) {
@@ -996,6 +1004,15 @@ function preview() {
 // 사람 채점 없이 시스템이 녹음을 듣고(ASR) 채점한다. 세부검사 녹음은 저장되는 즉시 뒤에서 분석을 시작하고,
 // 검사가 끝나면 남은 분석을 마친 뒤 결과지로 연결한다.
 async function getAsr() { return window.ReadingAsrOverride || import('./asr.js'); }
+// 낱말 하나를 읽는 녹음: 글자만 필요하므로 단어 시각을 계산하지 않고, 생성 길이를 짧게 막아 환각 반복으로 오래 걸리는 것을 막는다.
+const WORD_ASR = { timestamps: false, maxNewTokens: 24 };
+// 음성인식은 한 번에 하나씩(GPU·CPU를 나눠 쓰지 않게) 순서대로 돌린다.
+let asrChain = Promise.resolve();
+function transcribeQueued(blob, onProgress, opts) {
+  const run = asrChain.then(async () => (await getAsr()).transcribe(blob, onProgress, opts));
+  asrChain = run.catch(() => {});
+  return run;
+}
 
 const asrState = { status: 'idle', message: '', model: '' };
 function drawAsrState() {
@@ -1009,7 +1026,16 @@ function noteAsrModel(asr) {
   if (!asr) return;
   asrState.status = 'ready';
   asrState.model = asr.modelLabel || asr.model;
+  asrState.device = asr.device || asrState.device;
+  if (asr.elapsedMs != null) (asrState.times ||= []).push(asr.elapsedMs);
   drawAsrState();
+}
+// 채점 화면에 쓰는 속도 정보: 장치(GPU/CPU)와 녹음 하나당 평균 분석 시간
+function asrSpeedText() {
+  const times = asrState.times || [];
+  const avg = times.length ? (times.reduce((a, b) => a + b, 0) / times.length / 1000).toFixed(1) : null;
+  const device = asrState.device === 'webgpu' ? 'GPU 가속' : asrState.device ? 'CPU 실행 (GPU 가속 없음, 느림)' : '';
+  return [asrState.model, device, avg ? `녹음 하나당 평균 ${avg}초` : ''].filter(Boolean).join(' · ');
 }
 // 마이크 점검 때 미리 모델을 받아 두면 검사 중·후에 기다리지 않는다.
 async function preloadAsr() {
@@ -1031,7 +1057,7 @@ async function preloadAsr() {
 async function analyzeResponseWithAsr(session, response, onProgress) {
   const blob = response.audioKey ? await getBlob(response.audioKey) : null;
   if (!blob) return false;
-  const asr = await (await getAsr()).transcribe(blob, onProgress);
+  const asr = await transcribeQueued(blob, onProgress, response.module === 'decoding' ? WORD_ASR : {});
   noteAsrModel(asr);
   response.machineAnalysis ||= {};
   response.machineAnalysis.asr = asr;
@@ -1100,10 +1126,14 @@ function complete() {
   $('#complete-report').disabled = true;
   const run = async () => {
     status.textContent = '녹음을 분석하고 있습니다…';
+    // 검사 중에 뒤에서 돌던 채점이 남아 있으면 남은 개수를 보여 준다.
+    const watch = setInterval(() => { if (analysisQueue.pending && state.view === 'complete') status.textContent = `검사 중에 미리 채점하던 녹음 ${analysisQueue.pending}개를 마무리하는 중 · ${asrSpeedText()}`; }, 400);
     try {
-      await autoScoreSession(session, (i, n, message) => { status.textContent = `자동 채점 ${i + 1} / ${n}${message ? ` · ${message}` : ''}`; bar.style.width = `${Math.round(i / Math.max(n, 1) * 100)}%`; });
+      await autoScoreSession(session, (i, n, message) => { status.textContent = `자동 채점 ${i + 1} / ${n}${message ? ` · ${message}` : ''}${asrSpeedText() ? ` · ${asrSpeedText()}` : ''}`; bar.style.width = `${Math.round(i / Math.max(n, 1) * 100)}%`; });
+      clearInterval(watch);
       if (state.view === 'complete') done();
     } catch (error) {
+      clearInterval(watch);
       if (state.view !== 'complete') return;
       status.innerHTML = `<b>자동 채점을 마치지 못했습니다.</b> ${esc(error.message || error)} · 처음 한 번은 음성인식 모델을 내려받아야 하므로 인터넷 연결이 필요합니다.`;
       $('#complete-retry').classList.remove('hidden');
