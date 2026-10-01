@@ -17,12 +17,12 @@
 2. 저장소 폴더에서 간단한 로컬 서버를 실행합니다.
 
 ```bash
-python3 -m http.server 8080
+npm start
 ```
 
-3. 브라우저(Chrome 권장)에서 <http://localhost:8080>을 엽니다.
+3. 브라우저(Chrome 권장)가 <http://localhost:8080>으로 자동으로 열립니다. 열리지 않으면 직접 주소를 입력하세요. 끌 때는 터미널에서 `Ctrl + C`.
 
-`npm start`도 같은 명령입니다.
+`npm start`는 Node만으로 동작하는 `server.mjs`를 실행하므로 Windows·Mac 모두 같은 명령입니다. Python이 있다면 `python -m http.server 8080`도 됩니다.
 
 ### 5분 시연 순서
 
@@ -95,6 +95,7 @@ GitHub Pages는 프로토타입을 보여주고 한 기기에서 시험하는 �
 ├── catalog.js              # A~D 경로와 하위검사 목록(둘러보기 화면 포함)
 ├── report.js               # 10개 층 전문 결과지와 분석 문장
 ├── asr.js                  # 브라우저 안 Whisper 음성인식(선택)
+├── server.mjs              # npm start로 여는 로컬 서버(Node만 필요)
 ├── docs/
 │   ├── CODE_DESIGN_KO.md   # 중학생도 읽을 수 있는 코드 설계도
 │   └── DESIGN_EVIDENCE_KO.md # 설계 결정별 근거와 확인 수준
