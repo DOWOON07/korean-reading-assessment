@@ -538,6 +538,50 @@
     };
   }
 
+  // ---------- 선택형 하위검사 요약 ----------
+  // answers: [{ correct, rtMs, type, timedOut, noResponse }] (연습 제외). 시간 초과로 보지 못한 문항은 answers에 없다.
+  // efficiency: TOSREC처럼 제한 시간 안의 (정답 수 - 오답 수). 무작위로 누른 점수를 상쇄한다.
+  function choiceSummary(answers = []) {
+    const attempted = answers.filter(answer => !answer.noResponse);
+    const correct = answers.filter(answer => answer.correct).length;
+    const incorrect = attempted.length - correct;
+    const rts = answers.filter(answer => answer.correct && answer.rtMs != null).map(answer => answer.rtMs).sort((x, y) => x - y);
+    const mid = Math.floor(rts.length / 2);
+    const byType = {};
+    for (const answer of answers) {
+      const key = answer.type || '기타';
+      byType[key] ||= { n: 0, correct: 0 };
+      byType[key].n++;
+      if (answer.correct) byType[key].correct++;
+    }
+    return {
+      n: answers.length, attempted: attempted.length, correct, incorrect, noResponse: answers.length - attempted.length,
+      pct: answers.length ? Math.round(correct / answers.length * 1000) / 10 : null,
+      medianCorrectRtMs: rts.length ? (rts.length % 2 ? rts[mid] : Math.round((rts[mid - 1] + rts[mid]) / 2)) : null,
+      efficiency: correct - incorrect, byType
+    };
+  }
+
+  // 어휘판단의 민감도 d′ (신호탐지이론; Green & Swets, 1966). 실제단어에 '낱말' = 적중, 비단어에 '낱말' = 오경보.
+  // 0·1 비율은 로그선형 보정(각 칸 +0.5, 분모 +1; Hautus, 1995)으로 무한대를 피한다.
+  function inverseNormal(p) {
+    // Acklam의 유리함수 근사 (상대 오차 < 1.15e-9)
+    const a = [-39.69683028665376, 220.9460984245205, -275.9285104469687, 138.357751867269, -30.66479806614716, 2.506628277459239];
+    const b = [-54.47609879822406, 161.5858368580409, -155.6989798598866, 66.80131188771972, -13.28068155288572];
+    const c = [-0.007784894002430293, -0.3223964580411365, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+    const d = [0.007784695709041462, 0.3224671290700398, 2.445134137142996, 3.754408661907416];
+    const low = 0.02425;
+    if (p < low) { const q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+    if (p > 1 - low) { const q = Math.sqrt(-2 * Math.log(1 - p)); return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+    const q = p - 0.5, r = q * q;
+    return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+  }
+  function dPrime({ hits, signalN, falseAlarms, noiseN }) {
+    if (!signalN || !noiseN) return null;
+    const hitRate = (hits + 0.5) / (signalN + 1), faRate = (falseAlarms + 0.5) / (noiseN + 1);
+    return { hitRate: +(hits / signalN).toFixed(3), falseAlarmRate: +(falseAlarms / noiseN).toFixed(3), dPrime: +(inverseNormal(hitRate) - inverseNormal(faRate)).toFixed(2) };
+  }
+
   // ---------- 비율의 불확실성 ----------
   // Wilson (1927) 점수 신뢰구간. 문항 수가 적을 때 정규근사(Wald)보다 적절하다 (Brown, Cai & DasGupta, 2001).
   function wilsonInterval(hit, n, z = 1.96) {
@@ -568,7 +612,8 @@
     detectSpeech, waveformPeaks, comparableRating, ratingsAgree, syllableMatches, selfCorrectionCheck, hesitationCheck,
     constrainedDecodingChoice, alignWordsToPassage, cohensKappa, kappaLabel, wilsonInterval, proportionDifference,
     SCREENING_CONFIG, screeningDecision,
-    AUTO_SCORING_VERSION, asrToTranscript, autoDecodingRating, autoFluencyRating
+    AUTO_SCORING_VERSION, asrToTranscript, autoDecodingRating, autoFluencyRating,
+    choiceSummary, inverseNormal, dPrime
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.Scoring = api;

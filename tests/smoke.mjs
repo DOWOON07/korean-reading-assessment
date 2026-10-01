@@ -7,7 +7,7 @@ const css = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
 
 const templates = [
   'home', 'setup', 'mic', 'screen', 'route',
-  'task', 'complete', 'review', 'result', 'preview', 'report'
+  'task', 'choice', 'complete', 'review', 'result', 'preview', 'report'
 ];
 
 for (const name of templates) {
@@ -33,7 +33,7 @@ import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const scripts = [...html.matchAll(/<script src=["']([^"']+)["']/g)].map(match => match[1]).filter(src => !/^https?:/.test(src));
-assert.deepEqual(scripts, ['scoring.js', 'catalog.js', 'report.js', 'app.js'], `스크립트 순서: ${scripts}`);
+assert.deepEqual(scripts, ['scoring.js', 'catalog.js', 'battery.js', 'report.js', 'app.js'], `스크립트 순서: ${scripts}`);
 const bundle = (await Promise.all(scripts.map(src => readFile(new URL(`../${src}`, import.meta.url), 'utf8')))).join('\n;\n');
 const bundlePath = join(mkdtempSync(join(tmpdir(), 'kra-')), 'bundle.js');
 writeFileSync(bundlePath, bundle);

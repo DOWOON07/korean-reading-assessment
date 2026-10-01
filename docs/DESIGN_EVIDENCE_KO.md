@@ -1,4 +1,4 @@
-# 설계 근거서: 단어 해독·읽기 유창성 모듈 (v0.4)
+# 설계 근거서: 6개 모듈 읽기평가 프로토타입 (v0.5)
 
 이 문서는 프로토타입의 설계 결정마다 **무엇을 만들었는지(코드 위치)**와 **왜 그렇게 만들었는지(근거)**를 짝지어 기록한다.
 근거는 2026-09-30에 원문 또는 공식 서지 레코드를 직접 열어 확인했다. 확인 수준은 다음과 같이 표시한다.
@@ -103,12 +103,39 @@
 
 ## 8. 이번 버전에서 확인하지 못한 것 (정직하게 밝힐 부분)
 
+선택형 모듈(9장)에 대해서는 `docs/DESIGN_REPORT_PROFESSOR_KO.md` 8장에 따로 정리했다. 특히 한국 아동용 표준화 어휘판단·묵독 문장판단 검사는 찾지 못했다.
+
 1. 실제 사람 목소리로 발화 탐지와 음성인식을 시험하지 않았다 (가상 마이크와 대체 모듈로만 흐름을 확인).
 2. Whisper 모델(large-v3-turbo 포함)은 개발 환경의 네트워크 정책 때문에 내려받지 못해, 실제 한국어 인식 품질과 자동 채점 정확도는 확인하지 못했다(대체 모듈로 흐름만 확인).
 3. BASA 읽기의 "1분·음절" 채점 방식, AERA 표준의 조항 문구, 표준 발음법의 공식 사이트 원문은 2차 자료나 미러로만 확인했다.
 4. 문항·지문은 기능 시험용 후보이며 전문가 검토와 파일럿 자료가 없다.
 
 ---
+
+## 9. 녹음 없는 선택형 모듈 (v0.5): 글자·소리 처리, 단어 재인·묵독 효율, 언어 이해, 글 이해
+
+교수님 보고용으로 풀어 쓴 판은 `docs/DESIGN_REPORT_PROFESSOR_KO.md`, 조사 원자료(사실마다 URL과 확인 수준)는 `docs/research/korean_tests_survey.md`에 있다.
+
+| 설계 결정 | 구현 | 근거 | 확인 |
+|---|---|---|---|
+| 과제 형식은 공인 검사를 따르고 문항은 새로 만든 후보로 둔다 | `battery.js` (`battery-items-0.1`) | 공인 검사 개발 순서: 형식 → 문항 → 전문가 검토 → 예비검사 → 표준화 | 📐 |
+| 음운인식: 음절 탈락 → 음소 탈락 → 음소 대치, 듣고 4지선다 | `A-phon` 9문항 | KOLRA 음운인식(탈락·합성, 음절·음소 수준), CTOPP-2 Elision. 말로 답하는 원 형식을 선택형으로 바꾼 것은 우리 설계 | 🔶 / 📐 |
+| 글자-소리 대응: 최소대립 보기(평음·격음·경음, 받침, 모음) | `A-letter` 8문항 | RA-RCP 자모지식 하위검사; KOLRA에 자모지식이 없다는 지적(김영욱 외, 2016) | 🔶 |
+| 단어 재인: 글자열 350ms 노출 후 '+'로 가림, 실제/비단어 판단, 응답 시간 무제한 | `B-lexical` 24문항(12+12), `exposureMs` | ROAR(Yeatman 외, 2021): 76시행 신뢰도 .95, WJ와 r=.91; 기술 매뉴얼: 350ms, 시간 제한 없음 | ✅ |
+| 단어 재인 지표 d′(로그선형 보정)와 정답 반응 시간 중앙값 | `S.dPrime`, `choiceStats` | Green & Swets (1966); Hautus (1995) | ✅ (서지) |
+| 묵독 효율: 문장 참·거짓, 전체 3분, 데모 90초, 정답−오답 | `B-silent` 40문장(참 22·거짓 18) | TOSREC 3분(PRO-ED); ROAR-Sentence(Yeatman 외, 2024) TOSREC과 r=.87, 채점 정답−오답, 90초로 줄여도 영향 매우 작음(기술 매뉴얼) | ✅ |
+| 문장 작성 원칙: 답이 분명하고 배경지식·어휘 부담이 적은 단언문 | `B-silent` | ROAR-Sentence 문장 작성 원칙 | ✅ |
+| 언어이해는 듣기로 잰다 (해독과 분리) | `C-sentence` (문장 비표시), `C-listen` (`listenOnly`) | Simple View of Reading; KOLRA 핵심검사의 듣기이해 | ✅ / 🔶 |
+| 어휘 3단계(기초·학습·고급) | `C-vocab` 11문항 | 국립국어원 학습용 어휘 목록의 A·B·C 등급 체계를 본뜸. 목록 대조는 아직 안 함 | 📐 |
+| 문장 이해 문항은 어순 전략으로 풀 수 없는 구조(피동·사동·관형절·부정 비교) | `C-sentence` 8문항 | 수용 문법 검사의 일반 형식 | 📐 |
+| 형태소 인식: 동음 형태소·접사·한자어 형태소 | `C-morph` 8문항 | Carlisle (2000) (원문 대조 필요) | 📐 |
+| 글 이해 문항을 사실·추론·평가·복수 글로 나눈다 | `D-fact`, `D-infer`, `D-eval`, `D-multi` | PIRLS 2021 이해 과정; BASA-RC 사실적·추론적·평가적 이해(결과지 샘플); PISA 2018 복수 출처·신뢰성 평가 | ✅ |
+| 보기 순서는 고정 난수로 섞고 정답 위치를 블록마다 고르게 | `OPTION_ORDERS`, `fixedOptionOrder` | 정답 위치 편향 방지, 참여자 간 동일 순서 | 📐 |
+| 듣기 문항은 브라우저 합성 음성(ko-KR)으로 제시하고 반응 시간은 소리가 끝난 때부터 | `speak`, `choice()` | 기기마다 음성이 달라 표준화 전에는 녹음 음성으로 교체해야 함(한계에 명시) | 📐 |
+| 결과지: 정확도 + Wilson 95% CI + 우연 정답률 비교, 관찰→해석→근거, 문항별 추적 | `drawChoiceReport`, `choiceTableHtml` | Wilson (1927); 우연 수준과 구별 안 되면 표시 | ✅ / 📐 |
+| 전체 결과지: 해독 × 듣기 이해 교차 양상을 KOLRA 유형(난독증·특정이해결함·혼합형) **양상**으로만 기술 | `svrFinding` | KOLRA 해석(이은주·김영태, 2020); 70% 기준은 임시값 | 🔶 / 📐 |
+| 규준 칸(표준점수·백분위·지원 수준)은 BASA-R 결과지 구조로 두되 공란 | 결과지 '규준 위치' | BASA-R 결과지 샘플: 원점수·T점수·백분위·학년점수·5단계 | ✅ |
+| 시간: 데모 약 18분, 전체 약 35분 | `minutes` | KOLRA 60~90분, RA-RCP 90~120분, BASA-R 35분 (출판사 페이지) | ✅ |
 
 ## 참고문헌
 
@@ -146,3 +173,14 @@
 - 이은주. (2021). 읽기장애 아동의 한글 단어 해독 특성. *Communication Sciences & Disorders, 26*(4), 797–819. https://doi.org/10.12963/csd.21853
 - 김동일. *BASA:R 기초학습기능 수행평가체제: 읽기검사.* 인싸이트. http://inpsyt.co.kr/psy/item/view/BASAR_CO_TG
 - 인천광역시교육청 기초학력지원센터. (2025). *난독증 진단과 지도 가이드북(입문용).*
+- Yeatman, J. D., Tran, J. E., Burkhardt, A. K., Ma, W. A., Mitchell, J. L., Yablonski, M., Gijbels, L., Townley-Flores, C., & Richie-Halford, A. (2024). Development and validation of a rapid and precise online sentence reading efficiency assessment. *Frontiers in Education, 9*, 1494431. https://doi.org/10.3389/feduc.2024.1494431
+- ROAR Technical Manual. https://roar.stanford.edu/technical/
+- Wagner, R. K., Torgesen, J. K., Rashotte, C. A., & Pearson, N. A. (2010). *Test of Silent Reading Efficiency and Comprehension (TOSREC).* PRO-ED. https://proedinc.com/products-13460.html
+- Mullis, I. V. S., & Martin, M. O. (Eds.). (2019). *PIRLS 2021 Assessment Frameworks.* IEA.
+- OECD. (2019). *PISA 2018 Assessment and Analytical Framework.* OECD Publishing.
+- Green, D. M., & Swets, J. A. (1966). *Signal Detection Theory and Psychophysics.* Wiley.
+- Hautus, M. J. (1995). Corrections for extreme proportions and their biasing effects on estimated values of d′. *Behavior Research Methods, Instruments, & Computers, 27*(1), 46–51.
+- Rastle, K., Harrington, J., & Coltheart, M. (2002). 358,534 nonwords: The ARC Nonword Database. *QJEP A, 55*(4), 1339–1362. https://doi.org/10.1080/02724980244000099
+- 김보영, 양민화. (2017). 초등학생 무의미단어 철자 평가 개발. *Communication Sciences & Disorders, 22*(2), 296–308. https://doi.org/10.12963/csd.17399
+- 이은주, 김영태. (2020). *Communication Sciences & Disorders, 25*(3), 546–580. https://doi.org/10.12963/csd.20742
+- 김애화, 김의정, 황민아, 유현실. *RA-RCP 읽기성취 및 읽기인지처리능력검사.* 인싸이트. https://inpsyt.co.kr/psy/item/view/RARCP_CO_TG

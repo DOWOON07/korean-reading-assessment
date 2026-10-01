@@ -203,4 +203,14 @@ assert.equal(af.lastIndex, 6); assert.equal(af.metrics.completed, false);
 assert.equal(af.metrics.correctEojeol, 6);
 assert.equal(Scoring.autoFluencyRating(fTok, []).itemScore, 'UNSCORABLE');
 
-console.log('통과: 해독 오류 후보, 유창성 계산, 발화 탐지, 채점자 비교, 자동 채점 단위 테스트');
+// 선택형 하위검사 요약과 d′
+const cs = Scoring.choiceSummary([{ correct: true, rtMs: 900, type: '가' }, { correct: false, rtMs: 1200, type: '가' }, { correct: true, rtMs: 700, type: '나' }, { correct: false, noResponse: true, type: '나' }]);
+assert.equal(cs.n, 4); assert.equal(cs.correct, 2); assert.equal(cs.incorrect, 1); assert.equal(cs.noResponse, 1); assert.equal(cs.efficiency, 1);
+assert.equal(cs.medianCorrectRtMs, 800); assert.equal(cs.pct, 50); assert.deepEqual(cs.byType['나'], { n: 2, correct: 1 });
+assert.ok(Math.abs(Scoring.inverseNormal(0.975) - 1.959964) < 1e-5);
+assert.ok(Math.abs(Scoring.inverseNormal(0.5)) < 1e-9);
+// 적중 0.8(보정 (8.5/11)), 오경보 0.2(보정 (2.5/11)) → d′ = z(.7727) - z(.2273) ≈ 1.49
+const dp = Scoring.dPrime({ hits: 8, signalN: 10, falseAlarms: 2, noiseN: 10 });
+assert.equal(dp.hitRate, 0.8); assert.ok(Math.abs(dp.dPrime - 1.49) < 0.02, `d' ${dp.dPrime}`);
+
+console.log('통과: 해독 오류 후보, 유창성 계산, 발화 탐지, 채점자 비교, 자동 채점, 선택형 요약·d′ 단위 테스트');

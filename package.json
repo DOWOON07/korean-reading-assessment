@@ -1,11 +1,11 @@
 {
   "name": "korean-reading-assessment-prototype",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "한국어 단어 해독·읽기 유창성 연구용 웹 프로토타입",
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check app.js && node --check scoring.js && node --check catalog.js && node --check report.js && node --check asr.js && node --check server.mjs && node tests/smoke.mjs && node tests/scoring.test.mjs"
+    "check": "node --check app.js && node --check scoring.js && node --check catalog.js && node --check battery.js && node --check report.js && node --check asr.js && node --check server.mjs && node tests/smoke.mjs && node tests/scoring.test.mjs"
   },
   "engines": {
     "node": ">=18"
