@@ -45,7 +45,7 @@ export async function load(onProgress = () => {}) {
         const transcriber = await pipeline('automatic-speech-recognition', model.id, {
           device: model.device, dtype: model.dtype,
           progress_callback: event => {
-            if (event.status === 'progress' && event.total) onProgress(`${model.label} 내려받는 중 ${Math.round(event.loaded / event.total * 100)}% (${event.file})`);
+            if (event.status === 'progress' && event.total) onProgress(`${model.label} 불러오는 중 ${Math.round(event.loaded / event.total * 100)}% (처음 한 번만 내려받고, 이후에는 브라우저에 저장된 사본 사용)`);
             if (event.status === 'ready') onProgress(`${model.label} 준비됨`);
           }
         });

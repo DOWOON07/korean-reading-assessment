@@ -245,6 +245,9 @@ function bindCommon() {
 
 function home() {
   drawAsrState();
+  // 앱을 열자마자 음성인식 모델을 준비한다. 처음 한 번만 내려받고 이후에는 브라우저에 저장된 사본을 불러오므로,
+  // 참여자 정보를 입력하는 동안 준비가 끝나 검사 시작 시 기다리지 않는다.
+  preloadAsr();
   if ($('#preload-asr')) $('#preload-asr').onclick = () => preloadAsr();
   bindImport($('#import-session-home'));
   $('#load-demo').onclick = () => {
@@ -1018,7 +1021,7 @@ const asrState = { status: 'idle', message: '', model: '' };
 function drawAsrState() {
   const box = $('#asr-state');
   if (!box) return;
-  const text = { idle: '음성인식 모델을 아직 내려받지 않았습니다.', loading: asrState.message || '음성인식 모델 준비 중…', ready: `음성인식 준비됨 · ${asrState.model}`, error: `음성인식 모델을 불러오지 못했습니다. ${asrState.message}` }[asrState.status];
+  const text = { idle: '음성인식 모델 준비 전', loading: asrState.message || '음성인식 모델 준비 중…', ready: `음성인식 준비됨 · ${asrState.model}`, error: `음성인식 모델을 불러오지 못했습니다. ${asrState.message}` }[asrState.status];
   box.textContent = text;
   box.className = `asr-state ${asrState.status}`;
 }
