@@ -22,7 +22,7 @@ for (const marker of ['localStorage', 'indexedDB', 'MediaRecorder', 'readingSess
   assert.ok(js.includes(marker), `${marker} 기능이 없습니다.`);
 }
 
-assert.ok(html.includes('진단용 아님'), '비진단 안내가 없습니다.');
+assert.ok(html.includes('표준화 전 연구판'), '표준화 전 단계 안내가 없습니다.');
 assert.ok(html.includes('app.js'), 'app.js 연결이 없습니다.');
 assert.ok(html.includes('styles.css'), 'styles.css 연결이 없습니다.');
 assert.ok(css.length > 1000, '스타일 파일이 비어 있거나 너무 짧습니다.');

@@ -13,7 +13,7 @@
 | C | 언어 이해 (어휘, 문장 듣기, 이야기 듣기, 형태소) | 듣고 보기 고르기 |
 | D | 글 이해 (사실·추론·평가·두 글 비교) | 글 읽고 보기 고르기 |
 
-녹음 없는 4개 모듈의 문항은 `battery.js`, 설계 근거는 [docs/DESIGN_REPORT_PROFESSOR_KO.md](docs/DESIGN_REPORT_PROFESSOR_KO.md)와 [docs/DESIGN_EVIDENCE_KO.md](docs/DESIGN_EVIDENCE_KO.md) 9장에 있습니다. 듣기 문항은 브라우저의 한국어 합성 음성을 쓰므로 Chrome·Edge 최신판을 권합니다.
+녹음 없는 4개 모듈의 문항은 `battery.js`, 설계 근거는 [docs/PROFESSOR_BRIEF_KO.md](docs/PROFESSOR_BRIEF_KO.md)와 [docs/DESIGN_EVIDENCE_KO.md](docs/DESIGN_EVIDENCE_KO.md) 9장에 있습니다. 듣기 문항은 브라우저의 한국어 합성 음성을 쓰므로 Chrome·Edge 최신판을 권합니다.
 
 > 이 프로그램은 연구용 시제품입니다. 난독증 진단, 표준점수, 백분위 또는 전문가 검사와 같은 판정을 제공하지 않습니다.
 

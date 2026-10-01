@@ -464,7 +464,7 @@ const CHOICE_LIMITS = ['<li><b>문항:</b> 과제 형식은 공인 검사를 따
   '<li><b>합성 음성:</b> 듣기 문항은 브라우저 음성 합성으로 제시해 기기마다 목소리가 다를 수 있습니다. 표준화하려면 녹음한 음성 파일로 바꿔야 합니다.</li>',
   '<li><b>형식 차이:</b> 단어 재인은 ROAR처럼 350ms 노출을 썼지만, 묵독 효율의 데모 분량(90초)은 TOSREC(3분)보다 짧습니다. ROAR 기술 매뉴얼은 90초로 줄여도 신뢰도·타당도 변화가 매우 작다고 보고했으나 한국어에서는 확인되지 않았습니다.</li>',
   '<li><b>읽기 부담:</b> 듣기 과제(A, C)도 보기는 글자로 제시되어 보기를 읽는 능력이 일부 섞입니다. 어린 아동용은 그림 보기로 바꾸는 것이 바람직합니다.</li>',
-  '<li><b>진단 아님:</b> 이 결과지는 읽기 관련 능력을 빠르게 살펴보는 자료이며 어떤 진단도 의미하지 않습니다.</li>'];
+  '<li><b>판정 보류:</b> 연령 규준이 생기기 전이라 난독 위험 판정을 보류했습니다. 규준이 생기면 표준점수로 위험 여부를 판정하고, 진단은 전문가의 종합 평가로 확정합니다.</li>'];
 
 function drawChoiceReport(original, scope) {
   const session = original;
@@ -483,7 +483,7 @@ function drawChoiceReport(original, scope) {
   add('이 결과의 한계', `<ul class="summary-list limits">${CHOICE_LIMITS.join('')}</ul>`);
   $('#report-content').innerHTML = `
   <header class="report-head">
-    <div><p class="eyebrow">디지털 읽기 평가 · 경로 ${info.path} · 진단 아님</p><h2>${esc(info.title)} 결과지</h2><p class="quiet">${esc(info.sections.map(section => CHOICE_SUBTEST_TITLES[section.subtest] || section.title).join(' · '))}</p></div>
+    <div><p class="eyebrow">디지털 읽기 평가 · 경로 ${info.path} · 표준화 전 연구판</p><h2>${esc(info.title)} 결과지</h2><p class="quiet">${esc(info.sections.map(section => CHOICE_SUBTEST_TITLES[section.subtest] || section.title).join(' · '))}</p></div>
     <dl class="report-id"><div><dt>참여자</dt><dd>${esc(session.participant)}${session.demo ? ' (예시 자료)' : ''}</dd></div><div><dt>연령 구간</dt><dd>${esc(session.ageBand)}</dd></div><div><dt>검사일</dt><dd>${date}</dd></div><div><dt>상태</dt><dd>채점 완료</dd></div></dl>
   </header>
   ${session.demo ? '<p class="notice warning">이 결과지는 화면 시연용 예시 응답으로 만든 것이며 실제 참여자 자료가 아닙니다.</p>' : ''}
@@ -634,7 +634,7 @@ function drawReport(original, scope = 'all') {
   add('이 결과의 한계', `
     <ul class="summary-list limits">
       <li><b>음성인식 정확도:</b> 점수는 ${esc(session.sttModelLabel || '기기 안 Whisper')} 음성인식 결과로 자동 채점했습니다. 음성인식은 비단어를 비슷한 실제 단어로 바꿔 듣거나, 아동 음성·사투리·잡음에서 틀릴 수 있어 실제보다 오류가 많거나 적게 잡힐 수 있습니다. 이는 측정 도구의 한계이며, 자동 채점과 전문가 채점의 일치도는 파일럿에서 따로 검증합니다(${REFS.asr}).</li>
-      <li><b>진단 아님:</b> 이 결과지는 읽기 능력을 디지털로 빠르게 살펴보는 자료이며 난독증 등 어떤 진단도 의미하지 않습니다.</li>
+      <li><b>판정 보류:</b> 연령 규준(표준화 자료)이 생기기 전이라 난독 위험 판정을 보류했습니다. 규준이 생기면 표준점수로 위험 여부를 판정하고, 진단은 전문가의 종합 평가(지속 기간, 지도에 대한 반응, 다른 원인 배제)로 확정합니다.</li>
       <li><b>규준 없음:</b> 한국어 연령 규준이 없어 백분위·표준점수를 제공하지 않습니다. 기준값은 모두 임시값입니다.</li>
       <li><b>문항:</b> 문항과 지문은 기능 시험용 후보이며 난이도·동형성${showD ? '·비단어 적절성' : ''}이 검증되지 않았습니다.${session.length === 'demo' ? ' 이번 검사는 데모 분량(문항 수 축소)이라 결과의 불확실성이 더 큽니다.' : ''}</li>
       <li><b>시간 지표:</b> 반응 시작 시간과 낭독 구간은 에너지 기반 발화 탐지로 추정했습니다. 잡음이 크면 구간이 어긋날 수 있습니다.</li>
@@ -646,7 +646,7 @@ function drawReport(original, scope = 'all') {
 
   $('#report-content').innerHTML = `
   <header class="report-head">
-    <div><p class="eyebrow">디지털 읽기 평가 · 자동 채점 · 진단 아님</p><h2>${title}</h2><p class="quiet">${subtitle}</p></div>
+    <div><p class="eyebrow">디지털 읽기 평가 · 자동 채점 · 표준화 전 연구판</p><h2>${title}</h2><p class="quiet">${subtitle}</p></div>
     <dl class="report-id"><div><dt>참여자</dt><dd>${esc(session.participant)}${session.demo ? ' (예시 자료)' : ''}</dd></div><div><dt>연령 구간</dt><dd>${esc(session.ageBand)}</dd></div><div><dt>검사일</dt><dd>${date}</dd></div><div><dt>상태</dt><dd>${esc(({ SCORED: '자동 채점 완료', ANALYZING: '분석 중', IN_PROGRESS: '검사 중', INTERRUPTED: '중단됨' })[session.status] || session.status)}</dd></div></dl>
   </header>
   ${session.demo ? '<p class="notice warning">이 결과지는 화면 시연용 예시 채점값으로 만든 것이며 실제 참여자 자료가 아닙니다.</p>' : ''}

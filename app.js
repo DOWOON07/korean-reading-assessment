@@ -4,7 +4,7 @@ const app = $('#app');
 
 const APP_VERSION = '0.4-demo';
 const POLICY_VERSION = 'reading-research-policy-0.2';
-const CONTENT_VERSION = 'engineering-form-0.3';
+const CONTENT_VERSION = 'engineering-form-0.4';
 const RATING_VERSION = 'dual-rater-rule-0.3';
 // 허용 발음 목록의 버전. 표준 발음법(국립국어원 표준어 규정 제2부)을 적용한 후보이며 전문가 검토 전이다.
 const PRONUNCIATION_DICT_VERSION = 'accepted-forms-0.3';
@@ -21,18 +21,18 @@ const stimuli = {
     { id: 'RW-C-02', text: '모자', accepted: ['모자'], lexicality: 'real', regularity: 'consistent', kind: '실제단어', condition: '실제·표기-발음 일치', rule: '규칙적' },
     { id: 'RW-C-03', text: '바다', accepted: ['바다'], lexicality: 'real', regularity: 'consistent', kind: '실제단어', condition: '실제·표기-발음 일치', rule: '규칙적' },
     { id: 'RW-C-04', text: '우산', accepted: ['우산'], lexicality: 'real', regularity: 'consistent', kind: '실제단어', condition: '실제·표기-발음 일치', rule: '규칙적' },
-    { id: 'RW-I-01', text: '국물', accepted: ['궁물'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '비음화 후보' },
-    { id: 'RW-I-02', text: '설날', accepted: ['설랄'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '유음화 후보' },
-    { id: 'RW-I-03', text: '같이', accepted: ['가치'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '구개음화 후보' },
-    { id: 'RW-I-04', text: '꽃잎', accepted: ['꼰닙'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '복합 음운변동 후보' },
-    { id: 'NW-C-01', text: '가눔', accepted: ['가눔'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어 후보', condition: '비단어·표기-발음 일치 후보', rule: '전문가 검토 필요', reviewNote: '‘가누다’의 명사형 ‘가눔’과 형태소 충돌 가능' },
-    { id: 'NW-C-02', text: '두밋', accepted: ['두믿'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어 후보', condition: '비단어·표기-발음 일치 후보', rule: '전문가 검토 필요', reviewNote: '받침 ㅅ이 [ㄷ]으로 소리 나므로 ‘일치’ 조건에 맞지 않을 수 있음' },
-    { id: 'NW-C-03', text: '버눅', accepted: ['버눅'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어 후보', condition: '비단어·표기-발음 일치 후보', rule: '전문가 검토 필요' },
-    { id: 'NW-C-04', text: '소덥', accepted: ['소덥'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어 후보', condition: '비단어·표기-발음 일치 후보', rule: '전문가 검토 필요' },
-    { id: 'NW-I-01', text: '각물', accepted: ['강물'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어 후보', condition: '비단어·음운변동 후보', rule: '비음화 · 전문가 검토 필요', reviewNote: '발음 [강물]이 실제 단어 ‘강물’과 같음' },
-    { id: 'NW-I-02', text: '밭문', accepted: ['반문'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어 후보', condition: '비단어·음운변동 후보', rule: '비음화 · 전문가 검토 필요', reviewNote: '발음 [반문]이 실제 단어 ‘반문’과 같음' },
-    { id: 'NW-I-03', text: '옷리', accepted: ['온니'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어 후보', condition: '비단어·음운변동 후보', rule: '비음화 · 전문가 검토 필요' },
-    { id: 'NW-I-04', text: '닫는', accepted: ['단는'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어 여부 재검토', condition: '비단어·음운변동 후보', rule: '어휘·형태소 충돌 검토 필요', reviewNote: '실제 활용형 ‘닫는’과 같음' }
+    { id: 'RW-I-01', text: '국물', accepted: ['궁물'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '비음화 (제18항)' },
+    { id: 'RW-I-02', text: '설날', accepted: ['설랄'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '유음화 (제20항)' },
+    { id: 'RW-I-03', text: '같이', accepted: ['가치'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '구개음화 (제17항)' },
+    { id: 'RW-I-04', text: '입학', accepted: ['이팍'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '기식음화 (제12항)' },
+    { id: 'NW-C-01', text: '가몬', accepted: ['가몬'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어', condition: '비단어·표기-발음 일치', rule: '규칙적' },
+    { id: 'NW-C-02', text: '파숨', accepted: ['파숨'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어', condition: '비단어·표기-발음 일치', rule: '규칙적' },
+    { id: 'NW-C-03', text: '버눅', accepted: ['버눅'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어', condition: '비단어·표기-발음 일치', rule: '규칙적' },
+    { id: 'NW-C-04', text: '소덥', accepted: ['소덥'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어', condition: '비단어·표기-발음 일치', rule: '규칙적' },
+    { id: 'NW-I-01', text: '덕무', accepted: ['덩무'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어', condition: '비단어·음운변동', rule: '비음화 (제18항)' },
+    { id: 'NW-I-02', text: '문라', accepted: ['물라'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어', condition: '비단어·음운변동', rule: '유음화 (제20항)' },
+    { id: 'NW-I-03', text: '삭바', accepted: ['삭빠'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어', condition: '비단어·음운변동', rule: '된소리되기 (제23항)' },
+    { id: 'NW-I-04', text: '덥후', accepted: ['더푸'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어', condition: '비단어·음운변동', rule: '기식음화 (제12항)' },
   ],
   fluencyPractice: [
     { id: 'FP-01', kind: '연습 지문', practice: true, text: '아침이 되자 창문으로 밝은 햇빛이 들어왔습니다.' }
@@ -1754,7 +1754,7 @@ function drawResult(session) {
     return `<article class="result-card wide-card"><p class="eyebrow">${esc(response.stimulusId)} · ${adjudicationLabel(response.adjudication.status)}</p><h3>${esc(response.kind)}</h3><dl>${d('낭독 구간', `${metrics.readingSeconds}초`)}${d('정확도', `${metrics.accuracyEojeol}% 어절 · ${metrics.accuracySyllable}% 음절`)}${d('분당 정확 어절', metrics.correctEojeolPerMin)}${d('분당 정확 음절', metrics.correctSyllablesPerMin)}${d('첫 60초 정확 어절', metrics.first60.correctEojeol)}${d('오류', metrics.errors)}</dl><h4>오류 지도</h4><div class="passage-map static">${passageMapHtml(tokens, { marks: rating.marks || {}, lastIndex: rating.lastIndex, sixtyIndex: rating.sixtyIndex }, { interactive: false })}</div><p class="quiet">${esc(Object.entries(metrics.events).map(([name, count]) => `${name} ${count}`).join(' · ') || '표시된 오류 없음')} · 분모: 시도 ${metrics.attemptedEojeol}어절/${metrics.attemptedSyllables}음절${metrics.excluded ? `, 보류 ${metrics.excluded}어절 제외` : ''}</p></article>`;
   }).join('');
 
-  $('#result-content').innerHTML = `<div class="notice warning"><b>진단 결과가 아닙니다.</b> 표준점수·백분위·난독증 판정 없이 두 채점자가 확인한 원점수와 보류 상태만 표시합니다.${session.demo ? ' <b>이 기록은 화면 시연용 예시 자료입니다.</b>' : ''}</div>
+  $('#result-content').innerHTML = `<div class="notice warning"><b>표준화 전 연구판입니다.</b> 규준이 없어 표준점수·백분위·난독 위험 판정은 보류하고 두 채점자가 확인한 원점수와 보류 상태만 표시합니다.${session.demo ? ' <b>이 기록은 화면 시연용 예시 자료입니다.</b>' : ''}</div>
   <div class="result-meta"><span>참여자 ${esc(session.participant)}</span><span>${esc(session.ageBand)}</span><span>상태 ${esc(session.status)}</span><span>문항 ${esc(session.formVersion)}</span><span>채점 ${esc(session.ratingVersion)}</span><span>발음 목록 ${esc(session.pronunciationDictVersion || '0.2 이전')}</span><span>음성인식 ${esc(session.sttModelVersion || 'not-run')}</span></div>
   <div class="result-kpis"><article><small>해독 정확</small><b>${correct} / ${scoredDecoding.length}</b><span>AGREE만: ${agreeOnly.filter(isCorrect).length} / ${agreeOnly.length}</span></article><article><small>전문가 보류</small><b>${expert}</b><span>점수에서 제외</span></article><article><small>채점 진행 중</small><b>${pending}</b><span>독립 채점 또는 합의 필요</span></article><article><small>무효 음성</small><b>${invalid}</b><span>원점수에서 제외</span></article></div>
   <section class="result-section"><h2>단어 해독 2×2 조건별 원점수</h2>${scoredDecoding.length ? grid : '<p class="quiet">확정된 해독 문항이 없습니다.</p>'}<div class="chip-row">${Object.entries(errorCounts).map(([name, count]) => `<span class="marker-chip">${esc(name)} ${count}</span>`).join('') || '<span class="quiet">확정 문항에 기록된 오류 사건 없음</span>'}${median != null ? `<span class="marker-chip onset">반응 시작 중앙값 ${seconds1(median)}</span>` : ''}</div></section>
@@ -1785,9 +1785,9 @@ function buildDemoSession() {
   // 예시 음성인식 결과: [문항 ID, 인식된 말, 반응 시작 ms]. 실제 검사에서는 녹음에서 이 값이 나온다.
   const decodingPlan = [
     ['RW-C-01', '나무', 820], ['RW-C-02', '모자', 760], ['RW-C-03', '바다', 700], ['RW-C-04', '우산', 910],
-    ['RW-I-01', '국물', 1350], ['RW-I-02', '설랄', 1120], ['RW-I-03', '가치', 980], ['RW-I-04', '꼳입 꼰닙', 1640],
-    ['NW-C-01', '가눔', 1210], ['NW-C-02', '두믿', 1580], ['NW-C-03', '버 눅', 1900], ['NW-C-04', '소덥', 1300],
-    ['NW-I-01', '각물', 2100], ['NW-I-02', '받문', 2350], ['NW-I-03', '옫리', 2600], ['NW-I-04', '단는', 1450]
+    ['RW-I-01', '국물', 1350], ['RW-I-02', '설랄', 1120], ['RW-I-03', '가치', 980], ['RW-I-04', '입학 이팍', 1640],
+    ['NW-C-01', '가몬', 1210], ['NW-C-02', '파숨', 1580], ['NW-C-03', '버 눅', 1900], ['NW-C-04', '소덥', 1300],
+    ['NW-I-01', '덕무', 2100], ['NW-I-02', '물라', 2350], ['NW-I-03', '삭바', 2600], ['NW-I-04', '더푸', 1450]
   ];
   const base = (item, module, durationMs, speech, asrText) => ({
     id: uid(), stimulusId: item.id, module, target: item.text, expected: item.accepted?.[0] || '', accepted: item.accepted || [], kind: item.kind,

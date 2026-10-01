@@ -556,6 +556,7 @@
     if (OBSTRUENT_CODA.includes(jong) && cho === 'ㅎ') return '기식음화';
     if (OBSTRUENT_CODA.includes(jong) && ['ㄴ', 'ㅁ'].includes(cho)) return '비음화'; // 제18항
     if (['ㅁ', 'ㅇ'].includes(jong) && cho === 'ㄹ') return '비음화'; // 제19항
+    if (OBSTRUENT_CODA.includes(jong) && cho === 'ㄹ') return '비음화'; // 제19항 붙임 (막론[망논], 협력[혐녁])
     if ((['ㄴ'].includes(jong) && cho === 'ㄹ') || (['ㄹ', 'ㄾ', 'ㅀ'].includes(jong) && cho === 'ㄴ')) return '유음화'; // 제20항
     if (OBSTRUENT_CODA.includes(jong) && ['ㄱ', 'ㄷ', 'ㅂ', 'ㅅ', 'ㅈ'].includes(cho)) return '된소리되기'; // 제23항
     return null;
@@ -568,6 +569,33 @@
       if (rule) sites.push({ index: i, rule, pair: syllables[i] + syllables[i + 1] });
     }
     return sites;
+  }
+
+  // 표준 발음 후보 (문항 점검용). ruleAt이 찾는 규칙과 받침 대표음(제8·9항), 연음(제13항)만 적용한다. 단어별 예외 발음은 반영하지 않는다.
+  const compose = ({ cho, jung, jong }) => String.fromCharCode(0xac00 + CHO.indexOf(cho) * 588 + JUNG.indexOf(jung) * 28 + JONG.indexOf(jong));
+  const repCoda = jong => REP_K.includes(jong) ? 'ㄱ' : REP_T.includes(jong) || jong === 'ㅎ' ? 'ㄷ' : REP_P.includes(jong) ? 'ㅂ' : { 'ㄵ': 'ㄴ', 'ㄶ': 'ㄴ', 'ㄽ': 'ㄹ', 'ㄾ': 'ㄹ', 'ㅀ': 'ㄹ', 'ㄻ': 'ㅁ' }[jong] || jong;
+  const TENSE = { 'ㄱ': 'ㄲ', 'ㄷ': 'ㄸ', 'ㅂ': 'ㅃ', 'ㅅ': 'ㅆ', 'ㅈ': 'ㅉ' };
+  const ASPIRATE = { 'ㄱ': 'ㅋ', 'ㄷ': 'ㅌ', 'ㅂ': 'ㅍ', 'ㅈ': 'ㅊ' };
+  const SPLIT = { 'ㄳ': ['ㄱ', 'ㅅ'], 'ㄵ': ['ㄴ', 'ㅈ'], 'ㄺ': ['ㄹ', 'ㄱ'], 'ㄻ': ['ㄹ', 'ㅁ'], 'ㄼ': ['ㄹ', 'ㅂ'], 'ㄽ': ['ㄹ', 'ㅅ'], 'ㄾ': ['ㄹ', 'ㅌ'], 'ㄿ': ['ㄹ', 'ㅍ'], 'ㅄ': ['ㅂ', 'ㅅ'] };
+  function pronounce(word) {
+    const sy = [...String(word)].map(decompose);
+    if (sy.some(x => !x)) return word;
+    for (let i = 0; i + 1 < sy.length; i++) {
+      const a = sy[i], b = sy[i + 1], rule = ruleAt(a, b);
+      if (rule === '구개음화') { b.cho = a.jong === 'ㄷ' && b.cho === 'ㅇ' ? 'ㅈ' : 'ㅊ'; a.jong = a.jong === 'ㄾ' ? 'ㄹ' : ''; }
+      else if (rule === 'ㅎ탈락') { if (a.jong === 'ㅎ') a.jong = ''; else { b.cho = a.jong === 'ㄶ' ? 'ㄴ' : 'ㄹ'; a.jong = ''; } }
+      else if (rule === '기식음화' && b.cho === 'ㅎ') { const r = repCoda(a.jong); b.cho = a.jong === 'ㅈ' ? 'ㅊ' : ASPIRATE[r] || 'ㅌ'; a.jong = SPLIT[a.jong] ? SPLIT[a.jong][0] : ''; }
+      else if (rule === '기식음화') { b.cho = ASPIRATE[b.cho]; a.jong = a.jong === 'ㄶ' ? 'ㄴ' : a.jong === 'ㅀ' ? 'ㄹ' : ''; }
+      else if (rule === '비음화' && ['ㄴ', 'ㅁ'].includes(b.cho)) a.jong = { 'ㄱ': 'ㅇ', 'ㄷ': 'ㄴ', 'ㅂ': 'ㅁ' }[repCoda(a.jong)];
+      else if (rule === '비음화') { b.cho = 'ㄴ'; if (OBSTRUENT_CODA.includes(a.jong)) a.jong = { 'ㄱ': 'ㅇ', 'ㄷ': 'ㄴ', 'ㅂ': 'ㅁ' }[repCoda(a.jong)]; }
+      else if (rule === '유음화') { if (a.jong === 'ㄴ') a.jong = 'ㄹ'; else b.cho = 'ㄹ'; }
+      else if (rule === '된소리되기') { a.jong = repCoda(a.jong); b.cho = TENSE[b.cho]; }
+      else if (a.jong && b.cho === 'ㅇ' && a.jong !== 'ㅇ') { // 연음
+        if (SPLIT[a.jong]) { [a.jong, b.cho] = SPLIT[a.jong]; } else { b.cho = a.jong === 'ㅆ' ? 'ㅆ' : a.jong; a.jong = ''; }
+      }
+    }
+    for (const x of sy) x.jong = repCoda(x.jong);
+    return sy.map(compose).join('');
   }
 
   function choiceSummary(answers = []) {
@@ -642,7 +670,7 @@
     constrainedDecodingChoice, alignWordsToPassage, cohensKappa, kappaLabel, wilsonInterval, proportionDifference,
     SCREENING_CONFIG, screeningDecision,
     AUTO_SCORING_VERSION, asrToTranscript, autoDecodingRating, autoFluencyRating,
-    choiceSummary, inverseNormal, dPrime, ruleSites
+    choiceSummary, inverseNormal, dPrime, ruleSites, pronounce
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.Scoring = api;
