@@ -40,7 +40,22 @@ const stimuli = {
   fluency: [
     { id: 'F-A', kind: '이야기글 초안', condition: '개발용 지문 A', text: '민지는 아침에 작은 우산을 들고 집을 나섰다. 하늘에는 회색 구름이 많았지만 비는 아직 오지 않았다. 학교에 가는 길에 민지는 젖은 강아지 한 마리를 보았다. 민지는 강아지를 가게 처마 아래로 데려가 잠시 비를 피하게 했다. 조금 뒤 주인이 달려와 민지에게 고맙다고 말했다.' },
     { id: 'F-B', kind: '설명글 초안', condition: '개발용 지문 B', text: '나무는 뿌리로 땅속의 물을 빨아들인다. 물은 줄기를 지나 잎까지 올라간다. 잎은 햇빛을 이용해 나무가 자라는 데 필요한 양분을 만든다. 나무는 계절에 따라 모습이 달라지기도 한다. 봄에는 새잎이 나고, 가을에는 잎의 색이 변한다. 여러 나무는 사람과 동물에게 그늘과 보금자리를 제공한다.' }
-  ]
+  ],
+  // 짧은 공통 선별 (브리핑 v1.2 2장 중 기초 해독·유창성 축). 세부검사 문항과 겹치지 않게 따로 둔다. 검토 전 후보 문항이다.
+  // 단어는 세부검사와 같은 2×2(실제·비단어 × 표기 일치·음운변동)에서 칸마다 2개씩 뽑아, 어느 조건을 더 볼지 정한다.
+  screening: {
+    words: [
+      { id: 'S-W1', text: '나비', accepted: ['나비'], lexicality: 'real', regularity: 'consistent' },
+      { id: 'S-W2', text: '국민', accepted: ['궁민'], lexicality: 'real', regularity: 'phonological', rule: '비음화 (제18항)' },
+      { id: 'S-W3', text: '수벙', accepted: ['수벙'], lexicality: 'nonword', regularity: 'consistent' },
+      { id: 'S-W4', text: '벅눔', accepted: ['벙눔'], lexicality: 'nonword', regularity: 'phonological', rule: '비음화 (제18항)' },
+      { id: 'S-W5', text: '사과', accepted: ['사과'], lexicality: 'real', regularity: 'consistent' },
+      { id: 'S-W6', text: '학교', accepted: ['학꾜'], lexicality: 'real', regularity: 'phonological', rule: '된소리되기 (제23항)' },
+      { id: 'S-W7', text: '토밀', accepted: ['토밀'], lexicality: 'nonword', regularity: 'consistent' },
+      { id: 'S-W8', text: '덕마', accepted: ['덩마'], lexicality: 'nonword', regularity: 'phonological', rule: '비음화 (제18항)' }
+    ],
+    sentence: { id: 'S-S1', text: '동생은 공원에서 노란 공을 찼다. 공은 높이 날아가 나무 위에 걸렸다. 아빠가 긴 막대로 공을 꺼내 주었다.' }
+  }
 };
 // 지문 길이 메타데이터는 본문에서 계산해 버전과 함께 저장한다.
 for (const passage of [...stimuli.fluencyPractice, ...stimuli.fluency]) {
@@ -114,7 +129,38 @@ function upsertSession(session) {
   saveSessions(list);
 }
 
-function render(name) {
+// ---------- 화면 이동과 브라우저 뒤로 가기 ----------
+// 화면마다 주소(#이름)와 브라우저 기록을 남겨 브라우저 뒤로/앞으로 버튼과 화면 안의 '← 뒤로'가 같은 방식으로 동작한다.
+// 진행 중인 검사(task)나 선별(screen)을 떠날 때는 확인을 받고, 새로고침 뒤에는 저장된 기록으로 돌아간다.
+const SESSION_VIEWS = new Set(['mic', 'screen', 'route', 'task', 'complete']);
+const ACTIVE_KEY = 'readingActiveSession';
+
+function restoreActiveSession() {
+  if (state.session) return state.session;
+  const id = sessionStorage.getItem(ACTIVE_KEY);
+  state.session = id ? sessions().find(session => session.id === id) || null : null;
+  return state.session;
+}
+
+function canShow(view) {
+  if (!document.getElementById(`${view}-template`)) return false;
+  if (SESSION_VIEWS.has(view) && !restoreActiveSession()) return false;
+  if (view === 'task' && !state.taskQueue.length) return false;
+  if (view === 'preview' && !state.previewQueue) return false;
+  return true;
+}
+
+function render(name, { history: mode = 'push' } = {}) {
+  if (!canShow(name)) {
+    // 새로고침 등으로 진행 상태가 사라졌으면 가장 가까운 안전한 화면으로 보낸다.
+    name = name === 'task' && state.session ? 'route' : name === 'preview' && state.session ? 'complete' : 'home';
+    if (!canShow(name)) name = 'home';
+    mode = 'replace';
+  }
+  const depth = window.history.state?.depth || 0;
+  if (mode === 'push' && name !== state.view) window.history.pushState({ view: name, depth: depth + 1 }, '', `#${name}`);
+  else if (mode !== 'none') window.history.replaceState({ view: name, depth }, '', `#${name}`);
+  if (state.session) sessionStorage.setItem(ACTIVE_KEY, state.session.id);
   state.view = name;
   const template = $(`#${name}-template`);
   app.innerHTML = '';
@@ -124,9 +170,40 @@ function render(name) {
   ({ home, setup, mic, screen, route, task, review, result, preview, report }[name] || (() => {}))();
 }
 
+function goBack() {
+  if ((window.history.state?.depth || 0) > 0) window.history.back();
+  else render('home');
+}
+
+function leaveGuard(from, to) {
+  if (from === to) return true;
+  if (from === 'task') {
+    if (state.recorder?.state === 'recording' || state.taskIndex < state.taskQueue.length) {
+      if (!confirm('검사를 중단하고 나갈까요? 지금까지 저장한 응답은 남습니다.')) return false;
+      if (state.session) { state.session.status = 'INTERRUPTED'; state.session.updatedAt = now(); upsertSession(state.session); }
+      state.taskQueue = [];
+    }
+    stopStream();
+  }
+  if (from === 'screen' && !confirm('선별을 중단할까요? 진행 중인 선별 응답은 저장되지 않습니다.')) return false;
+  if (from === 'mic') stopStream();
+  return true;
+}
+
+window.addEventListener('popstate', event => {
+  const target = event.state?.view || location.hash.slice(1) || 'home';
+  if (!leaveGuard(state.view, target)) {
+    window.history.pushState({ view: state.view, depth: (event.state?.depth || 0) + 1 }, '', `#${state.view}`);
+    return;
+  }
+  render(target, { history: 'none' });
+});
+
 function bindCommon() {
-  $$('[data-action="home"]', app).forEach(button => button.onclick = () => { stopStream(); render('home'); });
-  $$('[data-action="new-session"]', app).forEach(button => button.onclick = () => render('setup'));
+  $$('[data-action="home"]', app).forEach(button => button.onclick = () => { if (leaveGuard(state.view, 'home')) { stopStream(); render('home'); } });
+  $$('[data-action="back"]', app).forEach(button => button.onclick = () => goBack());
+  $$('[data-action="new-session"]', app).forEach(button => button.onclick = () => { state.setupMode = { mode: 'full' }; render('setup'); });
+  $$('[data-action="new-module"]', app).forEach(button => button.onclick = () => { state.setupMode = { mode: 'module', module: button.dataset.module }; render('setup'); });
   $$('[data-action="open-review"]', app).forEach(button => button.onclick = () => render('review'));
   $$('[data-action="open-results"]', app).forEach(button => button.onclick = () => render('result'));
   $$('[data-action="open-report"]', app).forEach(button => button.onclick = () => render('report'));
@@ -146,14 +223,24 @@ function home() {
   };
 }
 
+// 두 가지 실시 방식
+// - full: 전체 흐름. 짧은 선별 → 경로 추천 → 세부검사 → 결과지 (실제 검사용 설계)
+// - module: 모듈별 검사. 선별 없이 단어 해독 또는 읽기 유창성 하나만 실시하고 그 모듈의 결과지만 본다 (시연·모듈 검증용)
 function setup() {
+  const setupMode = state.setupMode || { mode: 'full' };
+  if (setupMode.mode === 'module') {
+    $('#setup-title').textContent = `${moduleName(setupMode.module)} 검사를 준비합니다`;
+    $('#setup-route-note').innerHTML = `선별 없이 <b>${esc(moduleName(setupMode.module))}</b> 모듈만 실시하고, 끝나면 이 모듈의 결과지만 봅니다.`;
+    $$('.stepper span').forEach((span, i) => { if (i === 1) span.textContent = '장치 점검'; });
+    if (setupMode.module !== 'decoding') $('#random-order-row').classList.add('hidden');
+  }
   $('#setup-form').onsubmit = event => {
     event.preventDefault();
     const form = new FormData(event.target);
-    const modules = form.getAll('modules');
-    if (!modules.length) return alert('검사할 경로를 하나 이상 선택해 주세요.');
+    const moduleMode = setupMode.mode === 'module';
+    // 전체 흐름이면 실시할 모듈과 경로는 선별 결과로 정한다 (screen → route).
     state.session = {
-      id: uid(), participant: form.get('participant').trim(), ageBand: form.get('ageBand'), modules, orderPolicy: form.get('randomOrder') ? 'random' : 'fixed', previewPaths: form.getAll('previewPaths'),
+      id: uid(), participant: form.get('participant').trim(), ageBand: form.get('ageBand'), mode: setupMode.mode, modules: moduleMode ? [setupMode.module] : [], orderPolicy: form.get('randomOrder') ? 'random' : 'fixed', previewPaths: [],
       createdAt: now(), updatedAt: now(), screening: {}, responses: [], status: 'CREATED',
       formVersion: CONTENT_VERSION, policyVersion: POLICY_VERSION, ratingVersion: RATING_VERSION, pronunciationDictVersion: PRONUNCIATION_DICT_VERSION,
       sttModelVersion: 'not-connected', schemaVersion: '0.2',
@@ -255,55 +342,185 @@ function mic() {
       status.textContent = `마이크 점검을 완료하지 못했습니다. ${error.message || '권한을 확인해 주세요.'}`;
     } finally { button.disabled = false; }
   };
+  const moduleMode = state.session?.mode === 'module';
+  if (moduleMode) $('#continue-screening').textContent = `${moduleName(state.session.modules[0])} 검사 시작`;
   $('#continue-screening').onclick = () => {
     if (animation) cancelAnimationFrame(animation);
     if (context) context.close();
-    render('screen');
+    if (moduleMode) startTasks(state.session); else render('screen');
   };
 }
 
+// ---------- 짧은 공통 선별 (브리핑 v1.2 2장) ----------
+// 1 단어 읽기: 검사자가 듣고 바로 정확/오류를 누른다 (DIBELS·BASA처럼 실시간 채점).
+// 2 문장 읽기: 검사자가 읽기 시작·끝을 누르고, 틀린 어절을 누른다 → 정확도와 분당 정확 음절.
+// 두 결과를 S.screeningDecision 규칙에 넣어 실시할 모듈과 모듈 안에서 중점 확인할 것(확인 포인트)을 정한다.
+// 녹음하지 않으며 정밀 채점은 세부검사에서 녹음으로 한다.
 function screen() {
-  $('#screen-form').onsubmit = event => {
-    event.preventDefault();
-    const form = new FormData(event.target);
-    state.session.screening = {
-      decoding: +form.get('decoding'), fluency: +form.get('fluency'), phonology: +form.get('phonology'), comprehension: +form.get('comprehension'),
-      ruleStatus: 'PROVISIONAL_OBSERVATION_ONLY', recordedAt: now()
+  const content = stimuli.screening;
+  const result = { words: [], sentence: null, startedAt: now() };
+  const stage = $('#screen-stage');
+  const mark = step => $$('#screen-steps li').forEach(li => li.classList.toggle('current', li.dataset.step === step));
+
+  const words = (index = 0) => {
+    mark('words');
+    if (index >= content.words.length) return sentence();
+    const item = content.words[index];
+    const shownAt = performance.now();
+    drawJourney('screen', index);
+    stage.innerHTML = `<p class="eyebrow">선별 1 · 단어 읽기 ${index + 1} / ${content.words.length}</p>
+      <p class="task-instruction">참여자: 화면의 낱말을 소리 내어 읽어 주세요. 처음 보는 낱말도 있어요.</p>
+      <div class="stimulus word">${esc(item.text)}</div>
+      <div class="examiner-panel"><span class="examiner-label">검사자 채점</span><span class="quiet">허용 발음 [${esc(item.accepted.join(', '))}]${item.rule ? ` · ${esc(item.rule)}` : ''}</span>
+        <div class="button-row compact"><button class="primary" data-score="1">정확</button><button class="secondary" data-score="0">오류</button>${item.regularity === 'phonological' ? `<button class="secondary" data-score="0" data-spell="1">표기대로 읽음 (“${esc(item.text)}”)</button>` : ''}<button class="secondary" data-score="0" data-nr="1">무응답 (3초 이상)</button></div></div>`;
+    $$('[data-score]', stage).forEach(button => button.onclick = () => {
+      result.words.push({ id: item.id, text: item.text, lexicality: item.lexicality, regularity: item.regularity, correct: button.dataset.score === '1', noResponse: Boolean(button.dataset.nr), spellingRead: Boolean(button.dataset.spell), responseMs: Math.round(performance.now() - shownAt) });
+      words(index + 1);
+    });
+  };
+
+  const sentence = () => {
+    mark('sentence');
+    const tokens = S.tokenizePassage(content.sentence.text);
+    const errors = new Set();
+    let startedAt = null, timer = null;
+    drawJourney('screen', content.words.length);
+    stage.innerHTML = `<p class="eyebrow">선별 2 · 문장 읽기</p>
+      <p class="task-instruction">참여자: 아래 글을 평소처럼 소리 내어 읽어 주세요.</p>
+      <div class="stimulus passage screen-passage">${tokens.map(token => `<button type="button" class="token" data-token="${token.index}">${esc(token.surface)}</button>`).join(' ')}</div>
+      <div class="examiner-panel"><span class="examiner-label">검사자</span><span class="quiet">첫 낱말을 읽기 시작하면 <b>시작</b>, 다 읽으면 <b>끝</b>. 틀리거나 건너뛴 어절은 눌러 표시합니다(반복·자기수정은 정답).</span>
+        <div class="button-row compact"><button class="primary" id="sentence-start">시작</button><button class="secondary" id="sentence-stop" disabled>끝</button><span id="sentence-time" class="marker-chip">0.0초</span></div></div>`;
+    $$('.token', stage).forEach(button => button.onclick = () => {
+      const index = +button.dataset.token;
+      errors.has(index) ? errors.delete(index) : errors.add(index);
+      button.classList.toggle('mark-sub', errors.has(index));
+    });
+    $('#sentence-start').onclick = () => {
+      startedAt = performance.now();
+      $('#sentence-start').disabled = true; $('#sentence-stop').disabled = false;
+      timer = setInterval(() => { $('#sentence-time').textContent = `${((performance.now() - startedAt) / 1000).toFixed(1)}초`; }, 100);
     };
+    $('#sentence-stop').onclick = () => {
+      clearInterval(timer);
+      const ms = performance.now() - startedAt;
+      const marks = Object.fromEntries([...errors].map(index => [index, { mark: 'sub', flags: [] }]));
+      const metrics = S.computeFluency({ tokens, marks, onsetMs: 0, endMs: ms });
+      result.sentence = { id: content.sentence.id, errors: [...errors].sort((x, y) => x - y), seconds: +(ms / 1000).toFixed(2),
+        attemptedEojeol: metrics.attemptedEojeol, correctEojeol: metrics.correctEojeol, attemptedSyllables: metrics.attemptedSyllables, correctSyllables: metrics.correctSyllables };
+      finish();
+    };
+  };
+
+  const finish = () => {
+    const decision = S.screeningDecision({ ...result, ageBand: state.session.ageBand });
+    state.session.screening = { ...result, finishedAt: now(), contentVersion: 'screening-form-0.2', decision };
+    state.session.modules = [...decision.modules];
+    state.session.previewPaths = [...decision.paths];
     state.session.updatedAt = now();
     upsertSession(state.session);
     render('route');
   };
+
+  words();
+}
+
+// ---------- 진행 표시 ----------
+// 참여자가 "어디까지 왔고 얼마나 남았는지" 알 수 있게 전체 단계와 남은 문항·대략 시간을 보여 준다.
+// 시간은 문항 종류별 대략값(단어 6초, 문장 30초, 지문 70초, 미리보기 20초)으로 추정한 안내용이다.
+function journeyStages(session) {
+  const modules = session?.modules || [];
+  const previews = PREVIEW_SUBTESTS.filter(subtest => (session?.previewPaths || []).includes(subtest.pathId)).length;
+  const stages = session?.mode === 'module' ? [] : [{ key: 'screen', label: '선별', count: stimuli.screening.words.length + 1, sec: stimuli.screening.words.length * 6 + 30 }];
+  if (modules.includes('decoding')) stages.push({ key: 'decoding', label: '단어 해독', count: stimuli.decodingPractice.length + stimuli.decoding.length, sec: (stimuli.decodingPractice.length + stimuli.decoding.length) * 6 });
+  if (modules.includes('fluency')) stages.push({ key: 'fluency', label: '읽기 유창성', count: stimuli.fluencyPractice.length + stimuli.fluency.length, sec: 20 + stimuli.fluency.length * 70 });
+  if (previews) stages.push({ key: 'preview', label: '다른 영역 둘러보기', count: previews, sec: previews * 20 });
+  return stages;
+}
+
+function drawJourney(stageKey, position) {
+  const box = $('#journey');
+  if (!box) return;
+  const stages = journeyStages(state.session);
+  // 선별 단계에서는 아직 모듈이 정해지지 않았으므로 선별만 보여 준다.
+  const list = stageKey === 'screen' && !(state.session?.modules || []).length ? stages.slice(0, 1) : stages;
+  const at = list.findIndex(stage => stage.key === stageKey);
+  const total = list.reduce((sum, stage) => sum + stage.count, 0);
+  const done = list.slice(0, Math.max(at, 0)).reduce((sum, stage) => sum + stage.count, 0) + position;
+  const current = list[at] || list[0];
+  const remainingSec = list.slice(at + 1).reduce((sum, stage) => sum + stage.sec, 0) + Math.max(0, current.sec * (1 - position / current.count));
+  const minutes = Math.max(1, Math.round(remainingSec / 60));
+  const pending = stageKey === 'screen' && list.length === 1 ? `<li><span>2</span>세부검사 (선별 결과로 결정)</li>` : '';
+  box.innerHTML = `<ol class="journey-steps">${list.map((stage, i) => `<li class="${i < at ? 'done' : i === at ? 'current' : ''}"><span>${i < at ? '✓' : i + 1}</span>${esc(stage.label)}</li>`).join('')}${pending}<li class="${at === list.length ? 'current' : ''}"><span>★</span>완료</li></ol>
+    <div class="journey-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><span style="width:${Math.round(done / total * 100)}%"></span></div>
+    <p class="journey-text"><b>${esc(current.label)} ${Math.min(position + 1, current.count)} / ${current.count}</b> · 전체 ${Math.round(done / total * 100)}% 진행 · ${stageKey === 'screen' && list.length === 1 ? '선별 ' : ''}남은 시간 약 ${minutes}분</p>`;
+}
+
+function screeningSummaryHtml(screening) {
+  const d = screening?.decision;
+  if (!d) return '<p class="quiet">선별 기록 없음 (이전 형식 기록)</p>';
+  const m = d.measures, c = m.cells || {};
+  const cell = x => x && x.n ? `${x.hit}/${x.n}` : '–';
+  const tag = list => list.length ? `<span class="tag core">추가 확인</span>` : '<span class="tag off">통과</span>';
+  const focus = d.focus || [];
+  return `<div class="table-wrap"><table class="item-table"><thead><tr><th>선별 축</th><th>측정값</th><th>임시 기준</th><th>결과</th></tr></thead><tbody>
+    <tr><td>기초 해독 · 단어 ${m.wordN}개</td><td>${m.wordHit}/${m.wordN} 정확 · 실제 ${cell(c.real)} · 비단어 ${cell(c.nonword)} · 표기 일치 ${cell(c.consistent)} · 음운변동 ${cell(c.phonological)}</td><td class="quiet">하나라도 오류 → A 단어 해독</td><td>${tag(d.flags.A)}</td></tr>
+    <tr><td>유창성 · 문장 낭독</td><td>${m.sentenceAccuracy != null ? `어절 정확도 ${m.sentenceAccuracy}% · 분당 정확 음절 ${m.sentenceRate}` : '–'}</td><td class="quiet">정확도 ${S.SCREENING_CONFIG.sentenceMinAccuracy}% 미만 → A·B · 속도 ${m.rateFloor} 미만(${esc(d.ageBand)}) → B</td><td>${tag(d.flags.B)}</td></tr>
+  </tbody></table></div>
+  <div class="focus-list"><h4>세부검사에서 중점 확인할 것</h4>${focus.length ? `<ul>${focus.map(f => `<li><span class="tag ${f.module === 'decoding' ? 'core' : 'preview'}">${f.module === 'decoding' ? 'A 단어 해독' : 'B 유창성'}</span> <b>${esc(f.label)}</b> <span class="quiet">— 선별 신호: ${esc(f.reason)} · 세부검사에서 볼 것: ${esc(f.check)}</span></li>`).join('')}</ul>` : '<p class="quiet">선별에서 추가 확인 신호가 없습니다. 필요하면 아래 경로를 직접 켜서 세부검사를 실시할 수 있습니다.</p>'}</div>`;
 }
 
 function route() {
-  const modules = state.session.modules;
-  const screening = state.session.screening || {};
-  const observed = ['관찰되지 않음', '가끔 관찰됨', '자주 관찰됨'];
-  $('#route-summary').innerHTML = PLATFORM_PATHS.map(path => {
-    const obs = screening[path.screening];
-    const subtests = path.subtests.map(subtest => {
-      const active = subtest.status === 'core' ? modules.includes(subtest.module) : (state.session.previewPaths || []).includes(path.id);
-      const tag = subtest.status === 'core' ? (active ? '<span class="tag core">실시·채점</span>' : '<span class="tag off">이번에 제외</span>') : (active ? '<span class="tag preview">화면 미리보기</span>' : '<span class="tag off">건너뜀</span>');
-      return `<li class="${active ? '' : 'dim'}"><span>${esc(subtest.title)}</span>${tag}</li>`;
+  const session = state.session;
+  const decision = session.screening?.decision;
+  $('#screen-summary').innerHTML = screeningSummaryHtml(session.screening);
+  $('#rule-version').textContent = decision?.ruleVersion || '–';
+  const recommended = new Set(decision?.paths || []);
+  const draw = () => {
+    const selected = new Set($$('[name=routePath]:checked').map(box => box.value));
+    const chosen = selected.size || $$('[name=routePath]').length ? selected : recommended;
+    $('#route-summary').innerHTML = PLATFORM_PATHS.map(path => {
+      const on = chosen.has(path.id);
+      const reasons = decision?.flags?.[path.id] || [];
+      const subtests = path.subtests.map(subtest => {
+        const tag = !on ? '<span class="tag off">건너뜀</span>' : subtest.status === 'core' ? '<span class="tag core">실시·채점</span>' : '<span class="tag preview">화면 미리보기</span>';
+        return `<li class="${on ? '' : 'dim'}"><span>${esc(subtest.title)}</span>${tag}</li>`;
+      }).join('');
+      return `<article class="path-card path-${path.id} ${on ? 'on' : 'off'}"><label class="path-toggle"><input type="checkbox" name="routePath" value="${path.id}" ${on ? 'checked' : ''}> 경로 ${path.id}${recommended.has(path.id) ? ' · <b>선별 추천</b>' : ''}</label><h3>${esc(path.title)}</h3><p class="quiet">${reasons.length ? esc(reasons.join(' / ')) : ['C', 'D'].includes(path.id) ? '이번 선별 범위 밖 (두 핵심 모듈 우선). 켜면 화면 미리보기만 진행' : '선별에서 추가 확인 신호 없음'}</p><ul>${subtests}</ul></article>`;
     }).join('');
-    return `<article class="path-card path-${path.id}"><p class="eyebrow">경로 ${path.id}</p><h3>${esc(path.title)}</h3><p class="quiet">선별 관찰: ${obs == null ? '기록 없음' : observed[obs]}</p><ul>${subtests}</ul></article>`;
-  }).join('');
+    $$('[name=routePath]').forEach(box => box.onchange = draw);
+    const none = !chosen.size;
+    $('#start-assessment').disabled = none;
+    $('#start-assessment').textContent = none ? '추가 확인이 필요한 경로 없음' : '세부검사 시작';
+  };
+  draw();
   $('#tour-previews').onclick = () => startPreviews(PREVIEW_SUBTESTS, 'route');
   $('#start-assessment').onclick = () => {
-    state.taskQueue = [];
-    // 연습은 항상 먼저. 본검사 순서는 설정에 따라 고정 또는 무작위이며, 실제 제시 순서를 세션에 저장한다.
-    const mainItems = [...stimuli.decoding];
-    if (state.session.orderPolicy === 'random') for (let i = mainItems.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [mainItems[i], mainItems[j]] = [mainItems[j], mainItems[i]]; }
-    if (modules.includes('decoding')) state.taskQueue.push(...[...stimuli.decodingPractice, ...mainItems].map(item => ({ ...item, module: 'decoding' })));
-    if (modules.includes('fluency')) state.taskQueue.push(...[...stimuli.fluencyPractice, ...stimuli.fluency].map(item => ({ ...item, module: 'fluency' })));
-    state.taskIndex = 0;
-    state.session.presentationOrder = state.taskQueue.map(item => item.id);
-    state.session.status = 'IN_PROGRESS';
-    state.session.startedAt = now();
-    upsertSession(state.session);
-    render('task');
+    const chosen = $$('[name=routePath]:checked').map(box => box.value);
+    // 검사자 조정은 추천과 다른 경로만 기록한다.
+    session.routing = { recommended: [...recommended], final: chosen,
+      added: chosen.filter(id => !recommended.has(id)), removed: [...recommended].filter(id => !chosen.includes(id)), decidedAt: now() };
+    session.modules = [chosen.includes('A') ? 'decoding' : null, chosen.includes('B') ? 'fluency' : null].filter(Boolean);
+    session.previewPaths = chosen;
+    upsertSession(session);
+    if (!session.modules.length) return startPreviews(PREVIEW_SUBTESTS.filter(subtest => chosen.includes(subtest.pathId)), 'complete');
+    startTasks(session);
   };
+}
+
+function startTasks(session) {
+  const modules = session.modules;
+  state.taskQueue = [];
+  // 연습은 항상 먼저. 본검사 순서는 설정에 따라 고정 또는 무작위이며, 실제 제시 순서를 세션에 저장한다.
+  const mainItems = [...stimuli.decoding];
+  if (session.orderPolicy === 'random') for (let i = mainItems.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [mainItems[i], mainItems[j]] = [mainItems[j], mainItems[i]]; }
+  if (modules.includes('decoding')) state.taskQueue.push(...[...stimuli.decodingPractice, ...mainItems].map(item => ({ ...item, module: 'decoding' })));
+  if (modules.includes('fluency')) state.taskQueue.push(...[...stimuli.fluencyPractice, ...stimuli.fluency].map(item => ({ ...item, module: 'fluency' })));
+  state.taskIndex = 0;
+  session.presentationOrder = state.taskQueue.map(item => item.id);
+  session.status = 'IN_PROGRESS';
+  session.startedAt = now();
+  upsertSession(session);
+  render('task');
 }
 
 async function saveBlob(key, blob) {
@@ -349,6 +566,8 @@ function task() {
   state.shownAt = now();
   $('#task-name').textContent = `${moduleName(item.module)}${item.practice ? ' · 연습' : ''}`;
   $('#task-progress').textContent = `${state.taskIndex + 1} / ${state.taskQueue.length}`;
+  const sameModule = state.taskQueue.filter(task => task.module === item.module);
+  drawJourney(item.module, sameModule.indexOf(state.taskQueue[state.taskIndex]));
   $('#practice-banner').classList.toggle('hidden', !item.practice);
   $('#task-tags').innerHTML = [item.id, item.kind, item.condition, item.rule].filter(Boolean).map(tag => `<span>${esc(tag)}</span>`).join('');
   const stimulus = $('#stimulus');
@@ -361,6 +580,7 @@ function task() {
       state.session.updatedAt = now();
       upsertSession(state.session);
       stopStream();
+      state.taskQueue = [];
       render('home');
     }
   };
@@ -456,6 +676,7 @@ function task() {
       if (state.taskIndex < state.taskQueue.length) render('task');
       else {
         stopStream();
+        state.taskQueue = [];
         state.session.status = 'REVIEW_PENDING';
         state.session.submittedAt = now();
         sessionStorage.setItem('readingReviewSession', state.session.id);
@@ -497,6 +718,7 @@ function preview() {
   };
   $('#preview-path').textContent = `경로 ${item.pathId} · ${item.pathTitle}`;
   $('#preview-progress').textContent = `미리보기 ${state.previewIndex + 1} / ${list.length}`;
+  if (state.previewReturn === 'complete') drawJourney('preview', state.previewIndex); else $('#journey')?.remove();
   $('#preview-title').textContent = item.title;
   $('#preview-instruction').textContent = item.sample.instruction;
   $('#preview-stimulus').textContent = item.sample.prompt;
@@ -594,7 +816,7 @@ function review() {
 }
 
 function adjudicationLabel(status) {
-  return ({ AGREE: '일치', CONSENSUS: '합의', EXPERT_PENDING: '전문가 보류', INVALID_AUDIO: '음성 무효', NEEDS_CONSENSUS: '불일치', UNPAIRED: '독립 채점 중' })[status] || '채점 전';
+  return ({ AGREE: '일치', CONSENSUS: '합의', EXPERT_PENDING: '전문가 보류', INVALID_AUDIO: '음성 무효', NEEDS_CONSENSUS: '불일치', UNPAIRED: '독립 채점 중', PROVISIONAL: '잠정(1인 채점)' })[status] || '채점 전';
 }
 
 function eventInputs(events, checked = []) {
@@ -1156,10 +1378,18 @@ function drawResult(session) {
 // 실제 참여자 자료가 아니다. 결과 화면의 일치·합의·보류 흐름을 보여주기 위한 가상 채점값이며 음성은 없다.
 function buildDemoSession() {
   const created = now();
+  // 예시 선별: 음운변동 낱말 2개 오류(1개는 표기대로 읽음), 문장은 정확하지만 느림 → A·B 모두 실시
+  const wrong = { 'S-W2': 'spell', 'S-W8': 'error' };
+  const words = stimuli.screening.words.map(item => ({ id: item.id, text: item.text, lexicality: item.lexicality, regularity: item.regularity, correct: !wrong[item.id], spellingRead: wrong[item.id] === 'spell', noResponse: false, responseMs: 1200 }));
+  const sTokens = S.tokenizePassage(stimuli.screening.sentence.text);
+  const sMetrics = S.computeFluency({ tokens: sTokens, onsetMs: 0, endMs: 21000 });
+  const sentence = { id: stimuli.screening.sentence.id, errors: [], seconds: 21, attemptedEojeol: sMetrics.attemptedEojeol, correctEojeol: sMetrics.correctEojeol, attemptedSyllables: sMetrics.attemptedSyllables, correctSyllables: sMetrics.correctSyllables };
+  const decision = S.screeningDecision({ words, sentence, ageBand: '아동' });
   const session = {
-    id: uid(), participant: 'DEMO-예시', ageBand: '아동', modules: ['decoding', 'fluency'], demo: true,
-    createdAt: created, updatedAt: created, startedAt: created, screening: { decoding: 2, fluency: 1, phonology: 1, comprehension: 0, ruleStatus: 'DEMO' }, responses: [], status: 'REVIEW_PENDING',
-    previewPaths: ['A', 'B', 'C', 'D'], previewLog: PREVIEW_SUBTESTS.map(subtest => subtest.id), orderPolicy: 'fixed',
+    id: uid(), participant: 'DEMO-예시', ageBand: '아동', modules: decision.modules, demo: true,
+    createdAt: created, updatedAt: created, startedAt: created, screening: { words, sentence, decision, contentVersion: 'screening-form-0.2', finishedAt: created }, responses: [], status: 'REVIEW_PENDING',
+    routing: { recommended: decision.paths, final: decision.paths, added: [], removed: [], decidedAt: created },
+    previewPaths: decision.paths, previewLog: PREVIEW_SUBTESTS.filter(subtest => decision.paths.includes(subtest.pathId)).map(subtest => subtest.id), orderPolicy: 'fixed',
     formVersion: CONTENT_VERSION, policyVersion: POLICY_VERSION, ratingVersion: RATING_VERSION, pronunciationDictVersion: PRONUNCIATION_DICT_VERSION, sttModelVersion: 'not-run', schemaVersion: '0.3'
   };
   // [문항 ID, A 전사, B 전사, 반응 시작 ms, 합의 처리]
@@ -1232,4 +1462,4 @@ $('#reset-data').onclick = () => {
   }
 };
 
-render('home');
+render(location.hash.slice(1) || 'home', { history: 'replace' });

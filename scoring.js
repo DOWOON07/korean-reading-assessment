@@ -416,6 +416,59 @@
   }
 
 
+
+  // ---------- 선별 → 모듈과 확인 포인트 추천 ----------
+  // 브리핑 v1.2 2장의 선별 중 두 핵심 축(기초 해독 → A, 유창성 → B)만 실시한다.
+  // 선별은 "어느 모듈을 실시할지"와 "그 모듈에서 무엇을 중점 확인할지"를 정한다. 진단이 아니다.
+  // 기준값은 파일럿 전 임시값이다. 선별은 놓치는 것(위음성)이 더 위험하므로 경계에서는 포함하는 쪽으로 정했다.
+  const SCREENING_CONFIG = {
+    version: 'screening-rule-0.2-provisional',
+    wordMinAccuracy: 100,          // 선별 단어 하나라도 틀리면 A(단어 해독 세부검사)
+    sentenceMinAccuracy: 95,       // 문장 낭독 어절 정확도 95% 미만이면 A와 B 모두
+    sentenceMinRate: { 아동: 120, 청소년: 200, 성인: 250 } // 분당 정확 음절. 임시값, 연령 규준 아님
+  };
+
+  function screeningDecision({ words = [], sentence = null, ageBand = '성인' } = {}, config = SCREENING_CONFIG) {
+    const pct = (hit, n) => n ? Math.round(hit / n * 1000) / 10 : null;
+    const cell = filter => { const list = words.filter(filter); const hit = list.filter(word => word.correct).length; return { n: list.length, hit, errors: list.length - hit, pct: pct(hit, list.length) }; };
+    const all = cell(() => true);
+    const real = cell(word => word.lexicality === 'real'), nonword = cell(word => word.lexicality === 'nonword');
+    const consistent = cell(word => word.regularity === 'consistent'), phonological = cell(word => word.regularity === 'phonological');
+    const spellingReads = words.filter(word => word.spellingRead).length;
+    const noResponses = words.filter(word => word.noResponse).length;
+    let sentenceAcc = null, sentenceRate = null;
+    if (sentence && sentence.attemptedEojeol) {
+      sentenceAcc = pct(sentence.correctEojeol, sentence.attemptedEojeol);
+      sentenceRate = sentence.seconds > 0 ? Math.round(sentence.correctSyllables / sentence.seconds * 60 * 10) / 10 : null;
+    }
+    const rateFloor = config.sentenceMinRate[ageBand] ?? config.sentenceMinRate['성인'];
+    const accurate = sentenceAcc == null || sentenceAcc >= config.sentenceMinAccuracy;
+    const slow = sentenceRate != null && sentenceRate < rateFloor;
+
+    const flags = { A: [], B: [] };
+    const focus = [];
+    if (all.pct != null && all.pct < config.wordMinAccuracy) flags.A.push(`선별 단어 ${all.hit}/${all.n} 정확`);
+    if (!accurate) { flags.A.push(`문장 낭독 정확도 ${sentenceAcc}%`); flags.B.push(`문장 낭독 정확도 ${sentenceAcc}%`); }
+    if (slow) flags.B.push(`${accurate ? '정확하지만 느림' : '부정확하고 느림'}: 분당 정확 음절 ${sentenceRate} (임시 기준 ${rateFloor})`);
+
+    // 단어 해독에서 중점 확인할 것 (2×2 조건별)
+    if (consistent.errors) focus.push({ module: 'decoding', key: 'consistent', label: '기초 글자-소리 대응', reason: `표기대로 소리 나는 낱말 오류 ${consistent.errors}/${consistent.n}`, check: '표기-발음 일치 조건 정확도와 초성·중성·받침 오류 위치' });
+    if (nonword.errors && nonword.errors / nonword.n > (real.n ? real.errors / real.n : 0)) focus.push({ module: 'decoding', key: 'nonword', label: '비단어 해독(어휘 도움 없는 해독)', reason: `비단어 오류 ${nonword.errors}/${nonword.n} · 실제단어 오류 ${real.errors}/${real.n}`, check: '실제단어 대비 비단어 정확도 차이와 반응 시작 시간' });
+    if (phonological.errors) focus.push({ module: 'decoding', key: 'phonological', label: '음운변동 규칙 적용', reason: `음운변동 낱말 오류 ${phonological.errors}/${phonological.n}${spellingReads ? ` (표기대로 읽음 ${spellingReads})` : ''}`, check: '음운변동 조건 정확도, 표기대로 읽은 오류 수, 규칙별 오류' });
+    if (noResponses) focus.push({ module: 'decoding', key: 'hesitation', label: '머뭇거림·무응답', reason: `무응답 ${noResponses}`, check: '반응 시작 시간과 3초 초과 문항' });
+    // 유창성에서 중점 확인할 것
+    if (!accurate) focus.push({ module: 'fluency', key: 'accuracy', label: '낭독 정확도', reason: `어절 정확도 ${sentenceAcc}%`, check: '대치·생략·도움 제공의 위치와 어절 안 오류 음절' });
+    if (slow) focus.push({ module: 'fluency', key: 'rate', label: accurate ? '속도(정확하지만 느림)' : '속도', reason: `분당 정확 음절 ${sentenceRate}`, check: '분당 정확 음절, 긴 멈춤·반복·자기수정 빈도' });
+
+    const paths = Object.keys(flags).filter(key => flags[key].length);
+    return {
+      ruleVersion: config.version, ageBand,
+      measures: { wordAccuracy: all.pct, wordHit: all.hit, wordN: all.n, cells: { real, nonword, consistent, phonological }, spellingReads, noResponses, sentenceAccuracy: sentenceAcc, sentenceRate, rateFloor },
+      flags, focus, paths,
+      modules: [paths.includes('A') ? 'decoding' : null, paths.includes('B') ? 'fluency' : null].filter(Boolean)
+    };
+  }
+
   // ---------- 비율의 불확실성 ----------
   // Wilson (1927) 점수 신뢰구간. 문항 수가 적을 때 정규근사(Wald)보다 적절하다 (Brown, Cai & DasGupta, 2001).
   function wilsonInterval(hit, n, z = 1.96) {
@@ -444,7 +497,8 @@
     syllablesOf, countSyllables, decompose, jamoDiff, alignSyllables, parseTranscript, decodingCandidate,
     tokenizePassage, computeFluency, estimateTokenTimes, tokenAtTime,
     detectSpeech, waveformPeaks, comparableRating, ratingsAgree, syllableMatches, selfCorrectionCheck, hesitationCheck,
-    constrainedDecodingChoice, alignWordsToPassage, cohensKappa, kappaLabel, wilsonInterval, proportionDifference
+    constrainedDecodingChoice, alignWordsToPassage, cohensKappa, kappaLabel, wilsonInterval, proportionDifference,
+    SCREENING_CONFIG, screeningDecision
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.Scoring = api;

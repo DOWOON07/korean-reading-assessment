@@ -20,6 +20,19 @@
 | **AI는 후보만 만들고 최종 판정은 사람이 한다** | 모든 자동값은 "후보" 칸, 저장은 사람만 (`app.js` 검토 화면) | 자동 읽기평가와 사람 채점의 일치도가 과제에 따라 중간 수준: 단어 해독 MCC 0.43, 글 읽기 MCC 0.55 (van der Velde et al., 2025). 아동 음성의 단어 오류율은 성인의 2~5배 (Potamianos & Narayanan, 2003) | ✅ |
 | 진단·표준점수·백분위를 제공하지 않는다 | 결과지 8·9층 공란, "진단 아님" 문구 | 규준은 대표 표본과 신뢰도·타당도 증거가 있어야 함 — AERA·APA·NCME (2014) *Standards* (해당 조항 문구는 원문 대조 필요) | 🔶 |
 
+## 1-1. 짧은 선별검사와 경로 추천
+
+| 설계 결정 | 구현 | 근거 | 확인 |
+|---|---|---|---|
+| 짧은 공통 선별 → 필요한 세부 경로로 안내, 복수 경로 허용 | `screen()`, `S.screeningDecision` | 브리핑 v1.2 1·2장 (선별은 진단이 아니라 "어디를 더 볼지" 정하는 입구) | 📐 |
+| 이번 버전의 선별은 기초 해독(→A)과 유창성(→B) 두 축만 실시 | 단어 8개 + 문장 낭독 1편 | 브리핑 2장 선별 축 중 두 핵심 모듈 우선 (사용자 결정, 2026-10-01) | 📐 |
+| 선별 단어를 세부검사와 같은 2×2에서 칸마다 2개씩 뽑아 "모듈 안 중점 확인 포인트"를 정함 | `focus` (음운변동 규칙, 비단어 해독, 기초 대응, 머뭇거림, 낭독 정확도, 속도) | 해독 2×2 설계의 근거와 동일 (2장) | 📐 |
+| "정확하지만 느림 → B", "부정확 → A" | 문장 낭독 정확도와 분당 정확 음절 | 브리핑 2장 표 "정확하지만 느림 → B 유창성" | 📐 |
+| 선별은 검사자 실시간 채점, 정밀 채점은 세부검사 녹음으로 | 정확/오류/표기대로 읽음/무응답 버튼 | DIBELS 8은 검사자가 실시 중 바로 채점 (채점 안내) | ✅ |
+| 기준값은 임시값, 경계에서는 경로를 포함 (위음성 회피) | `SCREENING_CONFIG` (`screening-rule-0.2-provisional`) | 선별 도구는 민감도를 우선한다는 권고: Jenkins, Hudson & Johnson (2007) — 원문 대조 필요. 브리핑 10장: cutoff는 민감도·특이도로 파일럿 검증 후 확정 | 🔶 |
+| 검사자가 추천 경로를 바꿀 수 있고 바꾼 내역을 기록 | `session.routing` (recommended/final/added/removed) | 추천 근거와 사람 판단을 모두 남기는 원칙 (설계도 6장) | 📐 |
+| 결과지에서 선별 신호와 세부검사 결과를 나란히 비교 | 결과지 2층 연결표 | 선별 기준 검증 자료(브리핑 10장 "선별이 필요한 세부검사를 잘 찾아내는가?") | 📐 |
+
 ## 2. 단어 해독 모듈
 
 | 설계 결정 | 구현 | 근거 | 확인 |
@@ -107,6 +120,7 @@
 - Gough, P. B., & Tunmer, W. E. (1986). Decoding, reading, and reading disability. *Remedial and Special Education, 7*(1), 6–10. https://doi.org/10.1177/074193258600700104
 - Hasbrouck, J., & Tindal, G. (2017). *An update to compiled ORF norms* (Tech. Rep. No. 1702). University of Oregon. https://files.eric.ed.gov/fulltext/ED594994.pdf
 - Hoover, W. A., & Gough, P. B. (1990). The simple view of reading. *Reading and Writing, 2*(2), 127–160. https://doi.org/10.1007/BF00401799
+- Jenkins, J. R., Hudson, R. F., & Johnson, E. S. (2007). Screening for at-risk readers in a response to intervention framework. *School Psychology Review, 36*(4), 582–600. (서지 확인 필요)
 - Koenecke, A., Choi, A. S. G., Mei, K. X., Schellmann, H., & Sloane, M. (2024). Careless Whisper: Speech-to-text hallucination harms. *FAccT '24.* https://doi.org/10.1145/3630106.3658996
 - Landis, J. R., & Koch, G. G. (1977). The measurement of observer agreement for categorical data. *Biometrics, 33*(1), 159–174. https://doi.org/10.2307/2529310
 - Levenshtein, V. I. (1966). Binary codes capable of correcting deletions, insertions, and reversals. *Soviet Physics Doklady, 10*(8), 707–710.

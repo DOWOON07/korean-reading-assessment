@@ -2,15 +2,37 @@
 // 단어 해독(A)과 읽기 유창성(B)만 실제 원점수로 채우고, 나머지 영역은 '미실시' 공란으로 둔다.
 // 규준·진단 문구는 만들지 않는다 (설계도 v0.2 1장 "금지하는 주장").
 
+const USABLE = ['AGREE', 'CONSENSUS', 'PROVISIONAL'];
+
+// 한 사람만 채점한 문항은 "잠정(단일 채점)" 값으로 결과지에 반영하고, 결과지 위에 그 사실을 표시한다.
+// 두 채점자가 모두 채점하면 일치·합의 값으로 바뀐다. 불일치(합의 전)와 전문가 보류는 여전히 제외한다.
+function withProvisional(session) {
+  const copy = { ...session, responses: session.responses.map(response => {
+    const status = response.adjudication?.status;
+    if (status && status !== 'UNPAIRED') return response;
+    const single = response.ratings?.A || response.ratings?.B;
+    if (!single || single.itemScore === 'UNSCORABLE') return response;
+    return { ...response, adjudication: { status: 'PROVISIONAL', finalRating: single } };
+  }) };
+  copy.provisionalCount = copy.responses.filter(response => response.adjudication?.status === 'PROVISIONAL').length;
+  return copy;
+}
+
 function report() {
   const list = sessions().filter(session => scoredResponses(session).length);
   const select = $('#report-session-select');
+  const scope = $('#report-scope');
   if (!list.length) { $('#report-empty').classList.remove('hidden'); return; }
-  select.innerHTML = list.map(session => `<option value="${session.id}">${esc(session.participant)}${session.demo ? ' (예시)' : ''} · ${new Date(session.createdAt).toLocaleDateString('ko-KR')}</option>`).join('');
+  select.innerHTML = list.map(session => `<option value="${session.id}">${esc(session.participant)}${session.demo ? ' (예시)' : ''}${session.mode === 'module' ? ` · ${moduleName(session.modules[0])}` : ''} · ${new Date(session.createdAt).toLocaleDateString('ko-KR')}</option>`).join('');
   const preferred = sessionStorage.getItem('readingResultSession');
   if (preferred && list.some(session => session.id === preferred)) select.value = preferred;
-  const draw = () => { sessionStorage.setItem('readingResultSession', select.value); drawReport(list.find(session => session.id === select.value) || list[0]); };
-  select.onchange = draw;
+  const current = () => list.find(session => session.id === select.value) || list[0];
+  // 모듈별 검사 기록은 그 모듈 결과지를 기본으로 연다.
+  const defaultScope = session => session.modules.length === 1 ? session.modules[0] : 'all';
+  scope.value = defaultScope(current());
+  const draw = () => { sessionStorage.setItem('readingResultSession', select.value); drawReport(current(), scope.value); };
+  select.onchange = () => { scope.value = defaultScope(current()); draw(); };
+  scope.onchange = draw;
   $('#print-report').onclick = () => window.print();
   draw();
 }
@@ -24,15 +46,15 @@ const median = values => {
 const blank = '<span class="blank">— 미실시</span>';
 
 // 단일 계열 가로 막대. 값은 원점수 비율이며 규준 위치가 아니다.
-function barRow(label, value, { max = 100, unit = '%', note = '', empty = false } = {}) {
-  if (empty || value == null) return `<div class="bar-row bar-empty"><span class="bar-label">${label}</span><div class="bar-track"></div><span class="bar-value">${blank}</span></div>`;
+function barRow(label, value, { max = 100, unit = '%', note = '', empty = false, emptyText = null } = {}) {
+  if (empty || value == null) return `<div class="bar-row bar-empty"><span class="bar-label">${label}</span><div class="bar-track"></div><span class="bar-value">${emptyText ? `<span class="blank">${emptyText}</span>` : blank}</span></div>`;
   const width = Math.max(0, Math.min(100, value / max * 100));
   return `<div class="bar-row" title="${esc(`${label}: ${value}${unit}${note ? ` · ${note}` : ''}`)}"><span class="bar-label">${label}</span><div class="bar-track"><span class="bar-fill" style="width:${width}%"></span></div><span class="bar-value">${value}${unit}${note ? `<small>${esc(note)}</small>` : ''}</span></div>`;
 }
 
 function decodingStats(session) {
   const decoding = scoredResponses(session).filter(response => response.module === 'decoding');
-  const usable = decoding.filter(response => ['AGREE', 'CONSENSUS'].includes(response.adjudication?.status) && response.adjudication.finalRating);
+  const usable = decoding.filter(response => USABLE.includes(response.adjudication?.status) && response.adjudication.finalRating);
   const correct = response => response.adjudication.finalRating.itemScore === 'CORRECT';
   const group = filter => {
     const items = usable.filter(filter);
@@ -69,7 +91,7 @@ function decodingStats(session) {
 function fluencyStats(session) {
   const fluency = scoredResponses(session).filter(response => response.module === 'fluency');
   const passages = fluency.map(response => {
-    const final = ['AGREE', 'CONSENSUS'].includes(response.adjudication?.status) ? response.adjudication.finalRating : null;
+    const final = USABLE.includes(response.adjudication?.status) ? response.adjudication.finalRating : null;
     if (!final) return { response, final: null };
     const tokens = S.tokenizePassage(response.target);
     const metrics = S.computeFluency({ tokens, marks: final.marks, lastIndex: final.lastIndex, sixtyIndex: final.sixtyIndex, onsetMs: final.onsetMs, endMs: final.speechEndMs });
@@ -230,21 +252,22 @@ function findingsHtml(list, title = '분석') {
   return `<div class="analysis"><h4>${title}</h4>${list.map(item => `<div class="finding ${item.level}"><p class="finding-title">${esc(item.title)}</p><p><span class="k">관찰</span>${esc(item.observed)}</p><p><span class="k">해석</span>${esc(item.meaning)}</p><p class="basis"><span class="k">근거</span>${esc(item.basis)}</p></div>`).join('')}</div>`;
 }
 
-function overallStatement(d, f, agreement) {
+function overallStatement(d, f, agreement, scope = 'all') {
   const lines = [];
   const lex = d.real.n && d.nonword.n ? S.proportionDifference(d.real.hit, d.real.n, d.nonword.hit, d.nonword.n) : null;
   const reg = d.consistent.n && d.phonological.n ? S.proportionDifference(d.consistent.hit, d.consistent.n, d.phonological.hit, d.phonological.n) : null;
   const sure = [lex?.excludesZero && lex.diff > 0 ? '비단어 조건' : null, reg?.excludesZero && reg.diff > 0 ? '음운변동 조건' : null].filter(Boolean);
-  if (d.all.n) lines.push(sure.length
+  if (d.all.n && scope !== 'fluency') lines.push(sure.length
     ? `단어 해독은 ${sure.join('과 ')}에서 정확도가 낮았고, 차이의 95% 신뢰구간이 0을 포함하지 않았습니다. 이 조건을 겨냥한 문항을 늘려 재확인할 것을 권합니다.`
-    : `단어 해독 정확도는 ${d.all.pct}%(${ciText(d.all.hit, d.all.n)})이며, 현재 문항 수로는 조건 간 차이를 확정할 수 없습니다. 오류 위치와 유형은 아래 5층에서 문항 단위로 확인할 수 있습니다.`);
-  if (f.done.length) lines.push(`읽기 유창성은 어절 정확도 ${f.accuracyEojeol}%, 분당 정확 음절 ${f.syllablesPerMin}입니다. 한국어 규준이 없어 수준 판정 대신 오류 구성과 위치를 기술합니다.`);
-  const rel = [agreement.raterDecoding, agreement.raterFluency].filter(stat => stat.n);
+    : `단어 해독 정확도는 ${d.all.pct}%(${ciText(d.all.hit, d.all.n)})이며, 현재 문항 수로는 조건 간 차이를 확정할 수 없습니다. 오류 위치와 유형은 아래 오류 프로파일과 근거 추적에서 문항 단위로 확인할 수 있습니다.`);
+  if (f.done.length && scope !== 'decoding') lines.push(`읽기 유창성은 어절 정확도 ${f.accuracyEojeol}%, 분당 정확 음절 ${f.syllablesPerMin}입니다. 한국어 규준이 없어 수준 판정 대신 오류 구성과 위치를 기술합니다.`);
+  const rel = [scope !== 'fluency' ? agreement.raterDecoding : null, scope !== 'decoding' ? agreement.raterFluency : null].filter(stat => stat?.n);
   if (rel.length) lines.push(`점수는 두 채점자의 독립 채점에서 일치 또는 합의한 값만 썼으며, 채점자 간 κ는 ${rel.map(stat => stat.kappa).join(' / ')}입니다.`);
   return lines;
 }
 
-function metricGlossary() {
+function metricGlossary(scope = 'all') {
+  const decodingOnly = ['단어 해독 정확도', '조건별 정확도 (2×2)', '오류 위치', '반응 시작 시간'], fluencyOnly = ['어절·음절 정확도', '분당 정확 어절·음절'];
   const rows = [
     ['단어 해독 정확도', '확정 정답 문항 / 확정 문항 (자기수정은 정답)', REFS.dibels],
     ['조건별 정확도 (2×2)', '실제단어·비단어 × 표기-발음 일치·음운변동 필요', `${REFS.lex}; ${REFS.rule}`],
@@ -255,10 +278,35 @@ function metricGlossary() {
     ['95% 신뢰구간', '비율은 Wilson 구간, 조건 차이는 Newcombe 방법 10', REFS.ci],
     ["일치율·Cohen's κ", '두 채점자(또는 AI↔사람)의 문항·어절 판정 일치', REFS.kappa]
   ];
-  return `<div class="table-wrap"><table class="item-table"><thead><tr><th>지표</th><th>정의</th><th>근거</th></tr></thead><tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${esc(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="quiet">전체 문헌 목록과 확인 수준은 docs/DESIGN_EVIDENCE_KO.md에 있습니다.</p>`;
+  const shown = rows.filter(([name]) => !(scope === 'fluency' && decodingOnly.includes(name)) && !(scope === 'decoding' && fluencyOnly.includes(name)));
+  return `<div class="table-wrap"><table class="item-table"><thead><tr><th>지표</th><th>정의</th><th>근거</th></tr></thead><tbody>${shown.map(row => `<tr>${row.map(cell => `<td>${esc(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="quiet">전체 문헌 목록과 확인 수준은 docs/DESIGN_EVIDENCE_KO.md에 있습니다.</p>`;
 }
 
-function drawReport(session) {
+// 선별에서 지정한 확인 포인트를 세부검사 결과와 나란히 놓는다. 판정은 기술적이며, 조건 차이는 신뢰구간 규칙을 따른다.
+function screeningLinkRows(session, d, f) {
+  const decision = session.screening?.decision;
+  if (!decision?.focus) return '';
+  const rows = decision.focus.map(item => {
+    let detail = '–', verdict = '세부검사 미실시';
+    if (item.module === 'decoding' && d.all.n) {
+      if (item.key === 'consistent') { detail = `표기-발음 일치 ${d.consistent.hit}/${d.consistent.n} (${ciText(d.consistent.hit, d.consistent.n)})`; verdict = d.consistent.n - d.consistent.hit ? '오류 확인됨' : '세부검사에서는 오류 없음'; }
+      if (item.key === 'nonword') { const c = compareConditions('실제', d.real, '비단어', d.nonword); detail = c ? c.observed : '–'; verdict = !c ? '–' : c.nd.excludesZero && c.nd.diff > 0 ? '확인됨' : c.nd.diff > 0 ? '방향은 같으나 차이 확정 못 함' : '확인되지 않음'; }
+      if (item.key === 'phonological') { const c = compareConditions('일치', d.consistent, '음운변동', d.phonological); detail = `${c ? c.observed : `음운변동 ${d.phonological.hit}/${d.phonological.n}`} · 표기대로 읽음 ${d.spellingReads}`; verdict = c && c.nd.excludesZero && c.nd.diff > 0 ? '확인됨' : d.phonological.n - d.phonological.hit ? '오류 있음, 조건 차이는 확정 못 함' : '확인되지 않음'; }
+      if (item.key === 'hesitation') { detail = `3초 초과 ${d.hesitations}문항 · 무응답 ${d.events['무응답'] || 0}`; verdict = d.hesitations || d.events['무응답'] ? '확인됨' : '확인되지 않음'; }
+    }
+    if (item.module === 'fluency' && f.done.length) {
+      if (item.key === 'accuracy') { detail = `어절 정확도 ${f.accuracyEojeol}%`; verdict = f.accuracyEojeol < S.SCREENING_CONFIG.sentenceMinAccuracy ? '확인됨' : '세부검사 지문에서는 기준 이상'; }
+      if (item.key === 'rate') { const floor = decision.measures.rateFloor; detail = `분당 정확 음절 ${f.syllablesPerMin} (임시 기준 ${floor}) · 긴 멈춤 ${f.events['긴 멈춤'] || 0} · 반복 ${f.events['반복'] || 0}`; verdict = f.syllablesPerMin < floor ? '확인됨' : '세부검사 지문에서는 기준 이상'; }
+    }
+    return `<tr><td><b>${esc(item.label)}</b><br><span class="quiet">${item.module === 'decoding' ? 'A 단어 해독' : 'B 유창성'}</span></td><td>${esc(item.reason)}</td><td>${esc(detail)}</td><td><b>${esc(verdict)}</b></td></tr>`;
+  }).join('');
+  return `<h4>선별 확인 포인트 → 세부검사 결과</h4><div class="table-wrap"><table class="item-table"><thead><tr><th>확인 포인트</th><th>선별 신호</th><th>세부검사 결과</th><th>연결</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="quiet">선별에서 지정한 확인 포인트 없음</td></tr>'}</tbody></table></div>
+  <p class="quiet">선별은 짧은 실시간 채점이고 세부검사는 녹음과 두 채점자 확정값입니다. 두 결과가 다르면 선별 기준(임시값)을 조정할 근거 자료가 됩니다. 선별이 세부검사 결과를 얼마나 잘 찾아내는지(민감도·특이도)는 파일럿에서 검증합니다(브리핑 v1.2 10장).</p>`;
+}
+
+function drawReport(original, scope = 'all') {
+  const session = withProvisional(original);
+  const showD = scope !== 'fluency', showF = scope !== 'decoding', full = scope === 'all';
   const d = decodingStats(session);
   const f = fluencyStats(session);
   const agreement = agreementSummary(session);
@@ -296,80 +344,76 @@ function drawReport(session) {
 
   const agreementRows = `${agreementRow('채점 A ↔ B · 해독 최종 판정', agreement.raterDecoding, '문항')}${agreementRow('채점 A ↔ B · 유창성 어절 정오', agreement.raterFluency, '어절')}${agreementRow('AI 후보 ↔ 사람 확정 · 해독', agreement.aiDecoding, '문항')}${agreementRow('AI 후보 ↔ 사람 확정 · 유창성 어절', agreement.aiFluency, '어절')}`;
 
+  const title = scope === 'decoding' ? '단어 해독 결과지' : scope === 'fluency' ? '읽기 유창성 결과지' : '한국어 읽기평가 결과지';
+  const subtitle = scope === 'all' ? 'Blueprint v1.2 결과지 구조 · 핵심 모듈(A 해독, B 유창성)만 원점수 제공' : `모듈별 결과지 · ${scope === 'decoding' ? 'A 경로 단어 해독(실제단어·비단어 × 표기 일치·음운변동)' : 'B 경로 연결글 낭독(정확도·속도·오류)'}`;
+  const hasData = (showD && d.decoding.length) || (showF && f.passages.length);
+  const filterLines = lines => lines.filter(line => (showD || !line.startsWith('단어 해독')) && (showF || !line.startsWith('읽기 유창성') && !line.startsWith('유창성')));
+  const decodingErrors = `<div><h4>단어 해독 오류 사건</h4><div class="bars">${eventBars(d.events, d.usable.length)}</div>
+        <h4>대치된 자리 (음절 안 위치)</h4><div class="bars">${positionTotal ? `${barRow('초성', d.positions.cho, { max: positionTotal, unit: '회' })}${barRow('중성', d.positions.jung, { max: positionTotal, unit: '회' })}${barRow('받침', d.positions.jong, { max: positionTotal, unit: '회' })}${barRow('음절 생략·삽입', d.positions.whole, { max: positionTotal, unit: '회' })}` : '<p class="quiet">기록된 위치 없음</p>'}</div></div>`;
+  const fluencyErrors = `<div><h4>읽기 유창성 오류·사건</h4><div class="bars">${eventBars(f.events)}</div></div>`;
+  const latency = `<div><h4>단어 해독 반응 시작 시간 (중앙값)</h4><div class="bars">${[['실제·일치', d.cell('real', 'consistent')], ['실제·음운변동', d.cell('real', 'phonological')], ['비단어·일치', d.cell('nonword', 'consistent')], ['비단어·음운변동', d.cell('nonword', 'phonological')]].map(([label, c]) => barRow(label, c.latency != null ? +(c.latency / 1000).toFixed(2) : null, { max: 4, unit: '초', empty: c.latency == null, emptyText: c.n ? '— 발화 미탐지' : '— 확정 문항 없음' })).join('')}</div><p class="quiet">머뭇거림 창(${S.SCORING_CONFIG.hesitationWindowMs / 1000}초) 초과 ${d.hesitations}문항. 탐색 지표이며 해석 기준은 아직 없습니다.</p></div>`;
+  const fluencyTable = `<div><h4>읽기 유창성 정확도와 속도</h4><div class="table-wrap"><table class="item-table"><thead><tr><th>지문</th><th>낭독</th><th>정확도</th><th>분당 정확 어절</th><th>분당 정확 음절</th><th>첫 60초</th><th>긴 멈춤</th></tr></thead><tbody>${f.passages.map(passage => passage.final ? `<tr><td>${esc(passage.response.stimulusId)}</td><td>${passage.metrics.readingSeconds}초</td><td>${passage.metrics.accuracyEojeol}%</td><td>${passage.metrics.correctEojeolPerMin}</td><td>${passage.metrics.correctSyllablesPerMin}</td><td>${passage.metrics.first60.correctEojeol}어절</td><td>${passage.pauses}회</td></tr>` : `<tr><td>${esc(passage.response.stimulusId)}</td><td colspan="6" class="quiet">${adjudicationLabel(passage.response.adjudication?.status)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  const fluencyRows = f.passages.map(passage => `<tr><td>${esc(passage.response.stimulusId)}</td><td>${esc(passage.response.kind || '')}</td><td>${passage.final ? `${passage.metrics.correctEojeol}/${passage.metrics.attemptedEojeol}어절` : '–'}</td><td>${passage.final ? Object.entries(passage.metrics.events).map(([k, v]) => `${k} ${v}`).join(', ') || '오류 없음' : '–'}</td><td>${passage.response.audioKey ? '있음' : '없음'}</td><td>${adjudicationLabel(passage.response.adjudication?.status)}</td></tr>`).join('');
+  const agreementRowsScoped = `${showD ? agreementRow('채점 A ↔ B · 해독 최종 판정', agreement.raterDecoding, '문항') : ''}${showF ? agreementRow('채점 A ↔ B · 유창성 어절 정오', agreement.raterFluency, '어절') : ''}${showD ? agreementRow('AI 후보 ↔ 사람 확정 · 해독', agreement.aiDecoding, '문항') : ''}${showF ? agreementRow('AI 후보 ↔ 사람 확정 · 유창성 어절', agreement.aiFluency, '어절') : ''}`;
+  const reliabilityScoped = reliabilityFindings(agreement).filter(item => (showD || !item.title.includes('해독')) && (showF || !item.title.includes('유창성')));
+  const dFind = decodingFindings(d), fFind = fluencyFindings(f);
+
+  const sections = [];
+  const add = (title, html, cls = '') => sections.push({ title, html, cls });
+  add('검사 품질과 기본 정보', `
+    <div class="report-grid four"><div><small>실시 방식 · 모듈</small><b>${session.mode === 'module' ? '모듈별 검사' : '전체 흐름'} · ${session.modules.map(moduleName).join(', ') || '–'}</b></div><div><small>채점 반영 / 전체</small><b>${(showD ? d.usable.length : 0) + (showF ? f.done.length : 0)} / ${(showD ? d.decoding.length : 0) + (showF ? f.passages.length : 0)}</b></div><div><small>전문가 보류 · 무효 음성</small><b>${d.expert.length} · ${d.invalid.length}</b></div><div><small>장치 점검</small><b>${esc(session.deviceCheck?.quality?.flags?.join(', ') || (session.demo ? '예시 자료' : '기록 없음'))}</b></div></div>
+    ${full && session.screening?.decision ? `<h4>선별 결과와 경로</h4>${screeningSummaryHtml(session.screening)}${session.routing && (session.routing.added.length || session.routing.removed.length) ? `<p class="notice">검사자 조정: 추가 ${esc(session.routing.added.join(', ') || '없음')} · 제외 ${esc(session.routing.removed.join(', ') || '없음')}</p>` : ''}` : ''}
+    <p class="quiet">버전: 문항 ${esc(session.formVersion)} · 채점 ${esc(session.ratingVersion)} · 발음 목록 ${esc(session.pronunciationDictVersion || '–')} · 음성인식 ${esc(session.sttModelVersion || 'not-run')} · 설정 ${esc(S.SCORING_CONFIG.version)}${showD ? ` · 문항 순서 ${session.orderPolicy === 'random' ? '무작위' : '고정'}` : ''}${full ? ` · 선별 규칙 ${esc(session.screening?.decision?.ruleVersion || '–')}` : ''}</p>`);
+  add('핵심 요약', `
+    <div class="overall">${overallStatement(d, f, agreement, scope).map(line => `<p>${esc(line)}</p>`).join('') || '<p>채점된 응답이 아직 없습니다. 검토 화면에서 채점하면 결과가 채워집니다.</p>'}</div>
+    <ul class="summary-list">${filterLines(summarySentences(d, f)).map(line => `<li>${esc(line)}</li>`).join('')}</ul>
+    ${full ? screeningLinkRows(session, d, f) : ''}
+    <p class="quiet">${full ? '강점·상대적 취약 영역 판단은 영역별 신뢰도와 규준이 확보된 뒤 제공합니다. 현재는 두 핵심 모듈 안의 조건 비교만 기술합니다. 추가 확인이 필요한 영역: 글자·소리(음운인식, 자모), 언어 이해, 글 이해 (미실시).' : '이 결과지는 한 모듈의 원점수와 오류 근거만 보여 줍니다. 다른 영역의 수행은 평가하지 않았습니다.'}</p>`);
+  if (full) add('5영역 프로파일', `
+    <div class="bars">${barRow('글자·소리', null, { empty: true })}${barRow('해독', d.all.pct, { note: d.all.n ? `${d.all.hit}/${d.all.n}문항` : '' })}${barRow('유창성', f.accuracyEojeol, { note: f.done.length ? `어절 정확도 · 분당 ${f.eojeolPerMin}어절` : '' })}${barRow('언어 이해', null, { empty: true })}${barRow('글 이해', null, { empty: true })}</div>
+    <p class="quiet">막대는 원점수 정확도(%)이며 연령 규준상의 위치가 아닙니다. 공란은 이번 검사에서 실시하지 않은 영역입니다.</p>`);
+  if (showD) add(full ? '하위검사 결과' : '조건별 결과 (2×2)', `
+    <div class="table-wrap"><table class="grid-2x2"><thead><tr><th>단어 해독</th><th>표기-발음 일치</th><th>음운변동 필요</th></tr></thead><tbody><tr><th>실제단어</th><td>${cellHtml('real', 'consistent')}</td><td>${cellHtml('real', 'phonological')}</td></tr><tr><th>비단어</th><td>${cellHtml('nonword', 'consistent')}</td><td>${cellHtml('nonword', 'phonological')}</td></tr></tbody></table></div>
+    ${full ? `<div class="table-wrap spaced"><table class="item-table"><thead><tr><th>경로</th><th>하위검사</th><th>측정</th><th>원점수</th><th>실시</th></tr></thead><tbody>${subtestRows}</tbody></table></div>` : ''}
+    ${findingsHtml(dFind.slice(0, 3), '분석 · 단어 해독 조건 비교')}`);
+  else if (full) add('하위검사 결과', `<div class="table-wrap"><table class="item-table"><thead><tr><th>경로</th><th>하위검사</th><th>측정</th><th>원점수</th><th>실시</th></tr></thead><tbody>${subtestRows}</tbody></table></div>`);
+  add('오류 프로파일', `
+    <div class="report-grid ${showD && showF ? 'two' : 'one'}">${showD ? decodingErrors : ''}${showF ? fluencyErrors : ''}</div>
+    ${showF ? f.done.map(passage => `<h4>오류 지도 · ${esc(passage.response.stimulusId)} ${esc(passage.response.kind)}</h4><div class="passage-map static">${passageMapHtml(passage.tokens, { marks: passage.final.marks || {}, lastIndex: passage.final.lastIndex, sixtyIndex: passage.final.sixtyIndex }, { interactive: false })}</div>`).join('') : ''}
+    ${showF ? '<p class="quiet">범례: 노란 물결 밑줄 대치(작은 글씨는 실제로 읽은 말) · 빨간 취소선 생략 · 보라 도움 제공 · 회색 판정 보류 · R 반복 · SC 자기수정 · 오른쪽 파란 선 삽입 · 왼쪽 점선 긴 멈춤</p>' : ''}
+    ${findingsHtml([...(showD ? dFind.filter(item => ['오류가 난 자리', '자기수정'].includes(item.title)) : []), ...(showF ? fFind.filter(item => ['어절 안의 오류 위치', '오류 구성'].includes(item.title)) : [])], '분석 · 오류 양상')}`);
+  add('수행 효율', `
+    <div class="report-grid ${showD && showF ? 'two' : 'one'}">${showD ? latency : ''}${showF ? fluencyTable : ''}</div>
+    ${findingsHtml([...(showD ? dFind.filter(item => item.title === '반응 시작 시간') : []), ...(showF ? fFind.filter(item => ['정확도와 속도', '첫 60초와 전체'].includes(item.title)) : [])], '분석 · 수행 효율')}`);
+  add('근거 추적', `
+    <p class="quiet">모든 점수는 문항 → 전사 → 오류 위치 → 원음성 → 채점 상태로 거꾸로 따라갈 수 있습니다. 원음성은 검토 화면에서 재생·내려받기 할 수 있습니다.</p>
+    ${showD ? `<div class="table-wrap"><table class="item-table"><thead><tr><th>문항</th><th>표기 [허용 발음]</th><th>전사</th><th>판정</th><th>오류 위치</th><th>반응 시작</th><th>원음성</th><th>상태</th></tr></thead><tbody>${itemRows}</tbody></table></div>` : ''}
+    ${showF ? `<div class="table-wrap spaced"><table class="item-table"><thead><tr><th>지문</th><th>종류</th><th>정확 어절</th><th>기록된 사건</th><th>원음성</th><th>상태</th></tr></thead><tbody>${fluencyRows}</tbody></table></div>` : ''}
+    <h4>채점 신뢰도</h4><div class="table-wrap"><table class="item-table"><thead><tr><th>비교</th><th>표본</th><th>일치율</th><th>Cohen's κ</th></tr></thead><tbody>${agreementRowsScoped}</tbody></table></div>
+    ${findingsHtml(reliabilityScoped, '분석 · 채점 신뢰도')}`);
+  add('규준 위치 *', `
+    <div class="report-grid three"><div><small>표준점수</small><b>${blank}</b></div><div><small>백분위</small><b>${blank}</b></div><div><small>필요 지원 수준</small><b>${blank}</b></div></div>
+    <p class="quiet">대표 표본 규준과 신뢰도·타당도 자료가 없어 제공하지 않습니다.</p>`, 'muted-layer');
+  if (full) add('변화 추적 *', `<p>${blank}</p><p class="quiet">동형 검사 또는 공통 척도와 측정의 표준오차(SEM)가 확보된 뒤 재검사 변화를 보고합니다.</p>`, 'muted-layer');
+  add('해석 주의', `
+    <ul class="summary-list">
+      <li>이 결과지는 연구용 원점수이며 난독증 등 어떤 진단도 의미하지 않습니다.</li>
+      <li>문항과 지문은 기능 시험용 후보이며 난이도·동형성${showD ? '·비단어 적절성' : ''}이 검증되지 않았습니다.</li>
+      <li>점수는 두 채점자가 독립 채점 후 일치(AGREE)하거나 합의(CONSENSUS)한 값을 쓰고, 한 사람만 채점한 문항은 "잠정"으로 표시해 반영합니다. 전문가 보류(EXPERT_PENDING)와 무효 음성은 제외했습니다.</li>
+      <li>음절 정렬·발화 탐지·음성인식은 오류 후보를 만드는 보조 계산이며 최종 판정은 사람이 했습니다.</li>
+      ${full ? '<li>미실시 영역(글자·소리 일부, 언어 이해, 글 이해)은 평가하지 않았으므로 결과가 없다는 것이 수행에 문제가 없다는 뜻은 아닙니다.</li>' : ''}
+      <li>조건 비교는 95% 신뢰구간이 0을 포함하지 않을 때만 "차이가 있다"고 적었습니다. 문항 수가 적어 대부분의 차이는 방향만 참고해야 합니다.</li>
+    </ul>`);
+
   $('#report-content').innerHTML = `
   <header class="report-head">
-    <div><p class="eyebrow">연구용 읽기 프로파일 · 진단 아님</p><h2>한국어 읽기평가 결과지</h2><p class="quiet">Blueprint v1.2 결과지 구조 · 핵심 모듈(A 해독, B 유창성)만 원점수 제공</p></div>
+    <div><p class="eyebrow">연구용 읽기 프로파일 · 진단 아님</p><h2>${title}</h2><p class="quiet">${subtitle}</p></div>
     <dl class="report-id"><div><dt>참여자</dt><dd>${esc(session.participant)}${session.demo ? ' (예시 자료)' : ''}</dd></div><div><dt>연령 구간</dt><dd>${esc(session.ageBand)}</dd></div><div><dt>검사일</dt><dd>${date}</dd></div><div><dt>상태</dt><dd>${esc(session.status)}</dd></div></dl>
   </header>
   ${session.demo ? '<p class="notice warning">이 결과지는 화면 시연용 예시 채점값으로 만든 것이며 실제 참여자 자료가 아닙니다.</p>' : ''}
-
-  <section class="report-layer"><h3><span>1</span>검사 품질과 기본 정보</h3>
-    <div class="report-grid four"><div><small>실시 모듈</small><b>${session.modules.map(moduleName).join(', ')}</b></div><div><small>채점 확정 / 전체</small><b>${d.usable.length + f.done.length} / ${scored.length}</b></div><div><small>전문가 보류 · 무효 음성</small><b>${d.expert.length} · ${d.invalid.length}</b></div><div><small>장치 점검</small><b>${esc(session.deviceCheck?.quality?.flags?.join(', ') || (session.demo ? '예시 자료' : '기록 없음'))}</b></div></div>
-    <p class="quiet">버전: 문항 ${esc(session.formVersion)} · 채점 ${esc(session.ratingVersion)} · 발음 목록 ${esc(session.pronunciationDictVersion || '–')} · 음성인식 ${esc(session.sttModelVersion || 'not-run')} · 설정 ${esc(S.SCORING_CONFIG.version)} · 문항 순서 ${session.orderPolicy === 'random' ? '무작위' : '고정'}</p>
-  </section>
-
-  <section class="report-layer"><h3><span>2</span>핵심 요약</h3>
-    <div class="overall">${overallStatement(d, f, agreement).map(line => `<p>${esc(line)}</p>`).join('')}</div>
-    <ul class="summary-list">${summarySentences(d, f).map(line => `<li>${esc(line)}</li>`).join('')}</ul>
-    <p class="quiet">강점·상대적 취약 영역 판단은 영역별 신뢰도와 규준이 확보된 뒤 제공합니다. 현재는 두 핵심 모듈 안의 조건 비교만 기술합니다. 추가 확인이 필요한 영역: 글자·소리(음운인식, 자모), 언어 이해, 글 이해 (미실시).</p>
-  </section>
-
-  <section class="report-layer"><h3><span>3</span>5영역 프로파일</h3>
-    <div class="bars">${barRow('글자·소리', null, { empty: true })}${barRow('해독', d.all.pct, { note: d.all.n ? `${d.all.hit}/${d.all.n}문항` : '' })}${barRow('유창성', f.accuracyEojeol, { note: f.done.length ? `어절 정확도 · 분당 ${f.eojeolPerMin}어절` : '' })}${barRow('언어 이해', null, { empty: true })}${barRow('글 이해', null, { empty: true })}</div>
-    <p class="quiet">막대는 원점수 정확도(%)이며 연령 규준상의 위치가 아닙니다. 공란은 이번 검사에서 실시하지 않은 영역입니다.</p>
-  </section>
-
-  <section class="report-layer"><h3><span>4</span>하위검사 결과</h3>
-    <div class="table-wrap"><table class="grid-2x2"><thead><tr><th>단어 해독</th><th>표기-발음 일치</th><th>음운변동 필요</th></tr></thead><tbody><tr><th>실제단어</th><td>${cellHtml('real', 'consistent')}</td><td>${cellHtml('real', 'phonological')}</td></tr><tr><th>비단어</th><td>${cellHtml('nonword', 'consistent')}</td><td>${cellHtml('nonword', 'phonological')}</td></tr></tbody></table></div>
-    <div class="table-wrap spaced"><table class="item-table"><thead><tr><th>경로</th><th>하위검사</th><th>측정</th><th>원점수</th><th>실시</th></tr></thead><tbody>${subtestRows}</tbody></table></div>
-    ${findingsHtml(decodingFindings(d).slice(0, 3), '분석 · 단어 해독 조건 비교')}
-  </section>
-
-  <section class="report-layer"><h3><span>5</span>오류 프로파일</h3>
-    <div class="report-grid two">
-      <div><h4>단어 해독 오류 사건</h4><div class="bars">${eventBars(d.events, d.usable.length)}</div>
-        <h4>대치된 자리 (음절 안 위치)</h4><div class="bars">${positionTotal ? `${barRow('초성', d.positions.cho, { max: positionTotal, unit: '회' })}${barRow('중성', d.positions.jung, { max: positionTotal, unit: '회' })}${barRow('받침', d.positions.jong, { max: positionTotal, unit: '회' })}${barRow('음절 생략·삽입', d.positions.whole, { max: positionTotal, unit: '회' })}` : '<p class="quiet">기록된 위치 없음</p>'}</div></div>
-      <div><h4>읽기 유창성 오류·사건</h4><div class="bars">${eventBars(f.events)}</div></div>
-    </div>
-    ${f.done.map(passage => `<h4>오류 지도 · ${esc(passage.response.stimulusId)} ${esc(passage.response.kind)}</h4><div class="passage-map static">${passageMapHtml(passage.tokens, { marks: passage.final.marks || {}, lastIndex: passage.final.lastIndex, sixtyIndex: passage.final.sixtyIndex }, { interactive: false })}</div>`).join('')}
-    <p class="quiet">범례: 노란 물결 밑줄 대치(작은 글씨는 실제로 읽은 말) · 빨간 취소선 생략 · 보라 도움 제공 · 회색 판정 보류 · R 반복 · SC 자기수정 · 오른쪽 파란 선 삽입 · 왼쪽 점선 긴 멈춤</p>
-    ${findingsHtml([...decodingFindings(d).filter(item => ['오류가 난 자리', '자기수정'].includes(item.title)), ...fluencyFindings(f).filter(item => ['어절 안의 오류 위치', '오류 구성'].includes(item.title))], '분석 · 오류 양상')}
-  </section>
-
-  <section class="report-layer"><h3><span>6</span>수행 효율</h3>
-    <div class="report-grid two">
-      <div><h4>단어 해독 반응 시작 시간 (중앙값)</h4><div class="bars">${[['실제·일치', d.cell('real', 'consistent')], ['실제·음운변동', d.cell('real', 'phonological')], ['비단어·일치', d.cell('nonword', 'consistent')], ['비단어·음운변동', d.cell('nonword', 'phonological')]].map(([label, c]) => barRow(label, c.latency != null ? +(c.latency / 1000).toFixed(2) : null, { max: 4, unit: '초', empty: c.latency == null })).join('')}</div><p class="quiet">머뭇거림 창(${S.SCORING_CONFIG.hesitationWindowMs / 1000}초) 초과 ${d.hesitations}문항. 탐색 지표이며 해석 기준은 아직 없습니다.</p></div>
-      <div><h4>읽기 유창성 정확도와 속도</h4><div class="table-wrap"><table class="item-table"><thead><tr><th>지문</th><th>낭독</th><th>정확도</th><th>분당 정확 어절</th><th>분당 정확 음절</th><th>첫 60초</th><th>긴 멈춤</th></tr></thead><tbody>${f.passages.map(passage => passage.final ? `<tr><td>${esc(passage.response.stimulusId)}</td><td>${passage.metrics.readingSeconds}초</td><td>${passage.metrics.accuracyEojeol}%</td><td>${passage.metrics.correctEojeolPerMin}</td><td>${passage.metrics.correctSyllablesPerMin}</td><td>${passage.metrics.first60.correctEojeol}어절</td><td>${passage.pauses}회</td></tr>` : `<tr><td>${esc(passage.response.stimulusId)}</td><td colspan="6" class="quiet">${adjudicationLabel(passage.response.adjudication?.status)}</td></tr>`).join('')}</tbody></table></div></div>
-    </div>
-    ${findingsHtml([...decodingFindings(d).filter(item => item.title === '반응 시작 시간'), ...fluencyFindings(f).filter(item => ['정확도와 속도', '첫 60초와 전체'].includes(item.title))], '분석 · 수행 효율')}
-  </section>
-
-  <section class="report-layer"><h3><span>7</span>근거 추적</h3>
-    <p class="quiet">모든 점수는 문항 → 전사 → 오류 위치 → 원음성 → 채점 상태로 거꾸로 따라갈 수 있습니다. 원음성은 검토 화면에서 재생·내려받기 할 수 있습니다.</p>
-    <div class="table-wrap"><table class="item-table"><thead><tr><th>문항</th><th>표기 [허용 발음]</th><th>확정 전사</th><th>판정</th><th>오류 위치</th><th>반응 시작</th><th>원음성</th><th>상태</th></tr></thead><tbody>${itemRows}</tbody></table></div>
-    <h4>채점 신뢰도</h4><div class="table-wrap"><table class="item-table"><thead><tr><th>비교</th><th>표본</th><th>일치율</th><th>Cohen's κ</th></tr></thead><tbody>${agreementRows}</tbody></table></div>
-    ${findingsHtml(reliabilityFindings(agreement), '분석 · 채점 신뢰도')}
-  </section>
-
-  <section class="report-layer muted-layer"><h3><span>8</span>규준 위치 *</h3>
-    <div class="report-grid three"><div><small>표준점수</small><b>${blank}</b></div><div><small>백분위</small><b>${blank}</b></div><div><small>필요 지원 수준</small><b>${blank}</b></div></div>
-    <p class="quiet">대표 표본 규준과 신뢰도·타당도 자료가 없어 제공하지 않습니다.</p>
-  </section>
-
-  <section class="report-layer muted-layer"><h3><span>9</span>변화 추적 *</h3>
-    <p>${blank}</p><p class="quiet">동형 검사 또는 공통 척도와 측정의 표준오차(SEM)가 확보된 뒤 재검사 변화를 보고합니다.</p>
-  </section>
-
-  <section class="report-layer"><h3><span>10</span>해석 주의</h3>
-    <ul class="summary-list">
-      <li>이 결과지는 연구용 원점수이며 난독증 등 어떤 진단도 의미하지 않습니다.</li>
-      <li>문항과 지문은 기능 시험용 후보이며 난이도·동형성·비단어 적절성이 검증되지 않았습니다.</li>
-      <li>점수는 두 채점자가 독립 채점 후 일치(AGREE)하거나 합의(CONSENSUS)한 값만 사용하며, 전문가 보류(EXPERT_PENDING)와 무효 음성은 제외했습니다.</li>
-      <li>음절 정렬·발화 탐지·음성인식은 오류 후보를 만드는 보조 계산이며 최종 판정은 사람이 했습니다.</li>
-      <li>미실시 영역(글자·소리 일부, 언어 이해, 글 이해)은 평가하지 않았으므로 결과가 없다는 것이 수행에 문제가 없다는 뜻은 아닙니다.</li>
-      <li>조건 비교는 95% 신뢰구간이 0을 포함하지 않을 때만 "차이가 있다"고 적었습니다. 문항 수가 적어 대부분의 차이는 방향만 참고해야 합니다.</li>
-    </ul>
-  </section>
-
-  <section class="report-layer appendix"><h3><span>부록</span>지표 정의와 근거</h3>${metricGlossary()}</section>`;
+  ${session.provisionalCount ? `<p class="notice warning"><b>잠정 결과지:</b> ${session.provisionalCount}개 응답은 한 사람만 채점했습니다. 두 번째 채점자가 독립 채점하면 일치·합의 값으로 확정됩니다.</p>` : ''}
+  ${showF && f.done.some(passage => passage.metrics.correctSyllablesPerMin > 600) ? '<p class="notice warning"><b>시간 확인 필요:</b> 분당 600음절(초당 10음절)을 넘는 지문이 있습니다. 사람이 소리 내어 읽기 어려운 속도이므로, 검토 화면에서 발화 시작·끝 마커를 확인해 주세요.</p>' : ''}
+  ${!hasData ? `<p class="notice">이 기록에는 ${esc(title.replace(' 결과지', ''))} 응답이 없습니다. 위에서 다른 범위를 고르세요.</p>` : ''}
+  ${sections.map((section, i) => `<section class="report-layer ${section.cls}"><h3><span>${i + 1}</span>${section.title}</h3>${section.html}</section>`).join('\n')}
+  <section class="report-layer appendix"><h3><span>부록</span>지표 정의와 근거</h3>${metricGlossary(scope)}</section>`;
 }

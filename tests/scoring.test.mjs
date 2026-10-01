@@ -160,4 +160,22 @@ const nd = Scoring.proportionDifference(56, 70, 48, 80);
 assert.equal(nd.diff, 20); assert.ok(Math.abs(nd.low - 5.24) < 0.1, `low ${nd.low}`); assert.ok(Math.abs(nd.high - 33.36) < 0.1, `high ${nd.high}`); assert.equal(nd.excludesZero, true);
 assert.equal(Scoring.proportionDifference(3, 4, 2, 4).excludesZero, false);
 
+// 선별 → 모듈과 확인 포인트
+const sTokens = tokenizePassage('동생은 공원에서 노란 공을 찼다.');
+const okSentence = { ...computeFluency({ tokens: sTokens, onsetMs: 0, endMs: 3000 }), seconds: 3 }; // 13음절/3초 = 260/분
+const W = (lexicality, regularity, correct, extra = {}) => ({ lexicality, regularity, correct, ...extra });
+const allRight = [W('real', 'consistent', true), W('real', 'phonological', true), W('nonword', 'consistent', true), W('nonword', 'phonological', true)];
+let sd = Scoring.screeningDecision({ words: allRight, sentence: okSentence, ageBand: '성인' });
+assert.deepEqual(sd.paths, []); assert.deepEqual(sd.modules, []); assert.deepEqual(sd.focus, []);
+sd = Scoring.screeningDecision({ words: [W('real', 'consistent', true), W('real', 'phonological', true), W('nonword', 'consistent', true), W('nonword', 'phonological', false, { spellingRead: true })], sentence: okSentence, ageBand: '성인' });
+assert.deepEqual(sd.paths, ['A']); assert.deepEqual(sd.modules, ['decoding']);
+assert.deepEqual(sd.focus.map(f => f.key), ['nonword', 'phonological']); assert.ok(sd.focus[1].reason.includes('표기대로 읽음 1'));
+const slow = { ...computeFluency({ tokens: sTokens, onsetMs: 0, endMs: 20000 }), seconds: 20 }; // 39/분
+sd = Scoring.screeningDecision({ words: allRight, sentence: slow, ageBand: '아동' });
+assert.deepEqual(sd.paths, ['B']); assert.deepEqual(sd.modules, ['fluency']); assert.ok(sd.flags.B[0].startsWith('정확하지만 느림'));
+assert.deepEqual(sd.focus.map(f => f.key), ['rate']);
+const inaccurate = { ...computeFluency({ tokens: sTokens, marks: { 1: { mark: 'sub' } }, onsetMs: 0, endMs: 3000 }), seconds: 3 };
+sd = Scoring.screeningDecision({ words: allRight, sentence: inaccurate, ageBand: '아동' });
+assert.deepEqual(sd.paths, ['A', 'B']); assert.deepEqual(sd.focus.map(f => f.key), ['accuracy']);
+
 console.log('통과: 해독 오류 후보, 유창성 계산, 발화 탐지, 채점자 비교 단위 테스트');
