@@ -217,4 +217,12 @@ assert.equal(dp.hitRate, 0.8); assert.ok(Math.abs(dp.dPrime - 1.49) < 0.02, `d' 
 for (const [word, rule] of [['국물', '비음화'], ['같이', '구개음화'], ['설날', '유음화'], ['국밥', '된소리되기'], ['좋고', '기식음화'], ['놓아', 'ㅎ탈락'], ['담력', '비음화']]) assert.equal(Scoring.ruleSites(word)[0]?.rule, rule, word);
 assert.equal(Scoring.ruleSites('나무').length, 0); assert.equal(Scoring.ruleSites('우산을').length, 0);
 
+// 실제 음성 ASR 검증용 CER/WER·문항 정오 일치·처리속도
+assert.deepEqual(Scoring.transcriptionError('국물', '궁물', 'char'), { edits: 1, referenceUnits: 2, hypothesisUnits: 2, rate: 50 });
+const asrBenchmark = Scoring.asrBenchmarkSummary([
+  { referenceTranscript: '국물', asrTranscript: '궁물', humanScore: 'I', autoScore: 'I', audioSeconds: 2, elapsedMs: 1000 },
+  { referenceTranscript: '나무', asrTranscript: '나무', humanScore: 'C', autoScore: 'I', audioSeconds: 2, elapsedMs: 3000 }
+]);
+assert.equal(asrBenchmark.cer, 25); assert.equal(asrBenchmark.wer, 50); assert.equal(asrBenchmark.itemAgreement.agreement, 50); assert.equal(asrBenchmark.realTimeFactor, 1);
+
 console.log('통과: 해독 오류 후보, 유창성 계산, 발화 탐지, 채점자 비교, 자동 채점, 선택형 요약·d′·음운규칙 위치 단위 테스트');

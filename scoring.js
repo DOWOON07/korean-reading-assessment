@@ -598,6 +598,48 @@
     return sy.map(compose).join('');
   }
 
+  // ---------- ASR 검증 지표 ----------
+  // 사람 축어 전사를 기준으로 CER/WER를 계산한다. 자동 점수 정확도와는 별도 지표다.
+  function sequenceDistance(reference, hypothesis) {
+    const a = [...reference], b = [...hypothesis];
+    const dp = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0));
+    for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+    for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    return dp[a.length][b.length];
+  }
+  function asrUnits(text, unit) {
+    const normalized = String(text || '').normalize('NFKC').toLowerCase().replace(/[^0-9a-z가-힣\s]/giu, ' ').replace(/\s+/gu, ' ').trim();
+    return unit === 'word' ? (normalized ? normalized.split(' ') : []) : [...normalized.replace(/\s/gu, '')];
+  }
+  function transcriptionError(reference, hypothesis, unit = 'char') {
+    const ref = asrUnits(reference, unit), hyp = asrUnits(hypothesis, unit);
+    const edits = sequenceDistance(ref, hyp);
+    return { edits, referenceUnits: ref.length, hypothesisUnits: hyp.length, rate: ref.length ? +(edits / ref.length * 100).toFixed(1) : null };
+  }
+  function asrBenchmarkSummary(rows = []) {
+    let charEdits = 0, charUnits = 0, wordEdits = 0, wordUnits = 0, audioSeconds = 0, elapsedMs = 0;
+    const pairs = [];
+    for (const row of rows) {
+      const chars = transcriptionError(row.referenceTranscript, row.asrTranscript, 'char');
+      const words = transcriptionError(row.referenceTranscript, row.asrTranscript, 'word');
+      charEdits += chars.edits; charUnits += chars.referenceUnits;
+      wordEdits += words.edits; wordUnits += words.referenceUnits;
+      audioSeconds += Number(row.audioSeconds) || 0;
+      elapsedMs += Number(row.elapsedMs) || 0;
+      if (row.humanScore != null && row.autoScore != null) pairs.push([row.humanScore, row.autoScore]);
+    }
+    return {
+      n: rows.length,
+      cer: charUnits ? +(charEdits / charUnits * 100).toFixed(1) : null,
+      wer: wordUnits ? +(wordEdits / wordUnits * 100).toFixed(1) : null,
+      charEdits, charUnits, wordEdits, wordUnits,
+      itemAgreement: cohensKappa(pairs),
+      realTimeFactor: audioSeconds ? +(elapsedMs / 1000 / audioSeconds).toFixed(3) : null,
+      audioSeconds: +audioSeconds.toFixed(1), elapsedMs: Math.round(elapsedMs)
+    };
+  }
+
   function choiceSummary(answers = []) {
     const attempted = answers.filter(answer => !answer.noResponse);
     const correct = answers.filter(answer => answer.correct).length;
@@ -670,7 +712,8 @@
     constrainedDecodingChoice, alignWordsToPassage, cohensKappa, kappaLabel, wilsonInterval, proportionDifference,
     SCREENING_CONFIG, screeningDecision,
     AUTO_SCORING_VERSION, asrToTranscript, autoDecodingRating, autoFluencyRating,
-    choiceSummary, inverseNormal, dPrime, ruleSites, pronounce
+    choiceSummary, inverseNormal, dPrime, ruleSites, pronounce,
+    sequenceDistance, transcriptionError, asrBenchmarkSummary
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.Scoring = api;

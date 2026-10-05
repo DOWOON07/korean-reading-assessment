@@ -365,24 +365,48 @@ function chanceOf(answer) { const { item, section } = choiceItemOf(answer); retu
 
 function choiceStats(session) {
   const answers = session.choiceAnswers || [];
+  const validAnswers = answers.filter(answer => window.AssessmentSpec.isScorable(answer));
+  const invalidAnswers = answers.filter(answer => !window.AssessmentSpec.isScorable(answer));
   const bySubtest = {};
   for (const id of Object.keys(CHOICE_SUBTEST_TITLES)) {
-    const list = answers.filter(answer => answer.subtest === id);
+    const list = validAnswers.filter(answer => answer.subtest === id);
     if (!list.length) continue;
     const summary = S.choiceSummary(list);
     const chance = list.reduce((sum, answer) => sum + (chanceOf(answer) ?? 0), 0) / list.length;
     const ci = S.wilsonInterval(summary.correct, summary.n);
     bySubtest[id] = { ...summary, answers: list, chance: Math.round(chance * 1000) / 10, aboveChance: ci ? ci.low > chance * 100 : false };
   }
-  const lex = answers.filter(answer => answer.subtest === 'B-lexical');
+  const lex = validAnswers.filter(answer => answer.subtest === 'B-lexical');
   const words = lex.filter(answer => answer.answer === 'word'), non = lex.filter(answer => answer.answer === 'nonword');
   const lexical = lex.length ? { ...S.dPrime({ hits: words.filter(answer => answer.response === 'word').length, signalN: words.length, falseAlarms: non.filter(answer => answer.response === 'word').length, noiseN: non.length }),
     wordRt: medianOf(words.filter(answer => answer.correct).map(answer => answer.rtMs)), nonwordRt: medianOf(non.filter(answer => answer.correct).map(answer => answer.rtMs)), timeouts: lex.filter(answer => answer.noResponse).length } : null;
   const silentInfo = session.choiceSections?.['B-silent'];
   const silent = bySubtest['B-silent'] ? { ...bySubtest['B-silent'], limit: silentInfo?.timeLimitSec, timedOut: Boolean(silentInfo?.timedOut), total: silentInfo?.items } : null;
   const modules = {};
-  for (const module of CHOICE_SCOPES) { const list = answers.filter(answer => answer.module === module); if (list.length) modules[module] = S.choiceSummary(list); }
-  return { answers, bySubtest, lexical, silent, modules };
+  for (const module of CHOICE_SCOPES) { const list = validAnswers.filter(answer => answer.module === module); if (list.length) modules[module] = S.choiceSummary(list); }
+  return { answers, validAnswers, invalidAnswers, bySubtest, lexical, silent, modules };
+}
+
+function technicalSpecHtml(session) {
+  const spec = window.AssessmentSpec;
+  const summary = spec.presentationSummary(session);
+  const environment = session.environment || session.deviceMetadata || {};
+  const viewport = environment.viewport || {};
+  const voice = session.ttsProfile?.voice;
+  const connectivity = environment.online == null ? '상태 미기록' : environment.online ? '온라인' : '오프라인';
+  return `<div class="report-grid four">
+    <div><small>검사 사양</small><b>${esc(session.assessmentSpecVersion || '기록 없음')}</b></div>
+    <div><small>화면·배율</small><b>${viewport.width && viewport.height ? `${viewport.width}×${viewport.height}` : '기록 없음'} · DPR ${environment.devicePixelRatio ?? '–'} · scale ${viewport.scale ?? '–'}</b></div>
+    <div><small>음성 제시</small><b>${voice ? `${esc(voice.name)} · rate ${session.ttsProfile.rate}` : '사용 안 함/기록 없음'}</b></div>
+    <div><small>제시 품질</small><b>점수 제외 ${summary.invalidItems}문항 · TTS 실패 ${summary.ttsFailures}회</b></div>
+  </div>
+  <div class="table-wrap spaced"><table class="item-table"><thead><tr><th>환경</th><th>자극 시간</th><th>TTS</th><th>재현 정보</th></tr></thead><tbody><tr>
+    <td>${esc(environment.platform || 'unknown')} · ${environment.webgpu ? 'WebGPU' : 'CPU/WASM 후보'} · ${connectivity}</td>
+    <td>계측 ${summary.timedItems}문항 · 최대 지연 ${summary.maxLateDriftMs ?? '–'}ms · 허용 +${spec.PRESENTATION.exposureToleranceMs}ms</td>
+    <td>재생 ${summary.ttsPlays}회 · 중앙 ${summary.medianTtsWpm ?? '–'} WPM · 상태 ${esc(session.ttsProfile?.status || '–')}</td>
+    <td>앱 ${esc(session.appVersion || '세션 내 미기록')} · 문항 ${esc(session.formVersion || '–')} · 배터리 ${esc(session.batteryVersion || '–')}</td>
+  </tr></tbody></table></div>
+  ${summary.invalidItems ? `<p class="notice warning"><b>제시 품질로 점수에서 제외한 문항 ${summary.invalidItems}개:</b> 응답은 근거 추적에 보존하지만 정확도·반응시간 집계에는 넣지 않았습니다.</p>` : '<p class="quiet">기록된 제시 품질 실패가 없습니다. 이는 문항·규준 타당화가 끝났다는 뜻이 아닙니다.</p>'}`;
 }
 
 function choiceTableHtml(c, modules) {
@@ -447,9 +471,11 @@ function choiceTraceHtml(c, module) {
   const rows = c.answers.filter(answer => answer.module === module).map(answer => {
     const { item, section } = choiceItemOf(answer);
     const label = value => section?.binary?.find(option => option.value === value)?.label.replace(/\s*[⭕❌]/u, '') ?? value;
-    return `<tr><td>${esc(answer.itemId)}</td><td>${esc(CHOICE_SUBTEST_TITLES[answer.subtest] || '')}</td><td>${esc(answer.type || '')}</td><td>${esc(item?.stem || item?.text || '')}</td><td>${answer.noResponse ? '<span class="quiet">무응답</span>' : esc(label(answer.response))}</td><td>${esc(label(answer.answer))}</td><td>${answer.correct ? '정답' : '<b>오답</b>'}</td><td>${answer.rtMs != null ? `${(answer.rtMs / 1000).toFixed(2)}초` : '–'}</td></tr>`;
+    const valid = window.AssessmentSpec.isScorable(answer);
+    const quality = valid ? (answer.presentation?.targetMs ? `유효 · 실제 ${answer.presentation.actualMs ?? '–'}ms` : '유효') : `<b>점수 제외 · ${esc(answer.scoringStatus)}</b>`;
+    return `<tr><td>${esc(answer.itemId)}</td><td>${esc(CHOICE_SUBTEST_TITLES[answer.subtest] || '')}</td><td>${esc(answer.type || '')}</td><td>${esc(item?.stem || item?.text || '')}</td><td>${answer.noResponse ? '<span class="quiet">무응답</span>' : esc(label(answer.response))}</td><td>${esc(label(answer.answer))}</td><td>${valid ? (answer.correct ? '정답' : '<b>오답</b>') : '—'}</td><td>${answer.rtMs != null ? `${(answer.rtMs / 1000).toFixed(2)}초` : '–'}</td><td>${quality}</td></tr>`;
   }).join('');
-  return `<div class="table-wrap"><table class="item-table"><thead><tr><th>문항</th><th>하위검사</th><th>유형</th><th>문항</th><th>응답</th><th>정답</th><th>정오</th><th>반응 시간</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="table-wrap"><table class="item-table"><thead><tr><th>문항</th><th>하위검사</th><th>유형</th><th>문항</th><th>응답</th><th>정답</th><th>정오</th><th>반응 시간</th><th>제시 품질</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function choiceNextStep(c, modules) {
@@ -461,7 +487,7 @@ function choiceNextStep(c, modules) {
 const CHOICE_LIMITS = ['<li><b>문항:</b> 과제 형식은 공인 검사를 따랐지만 문항은 이 연구에서 새로 만든 후보이며, 전문가 검토·예비검사(난이도·변별도)를 거치지 않았습니다. 하위검사당 문항이 4~12개로 적어 신뢰구간이 넓습니다.</li>',
   '<li><b>규준 없음:</b> 연령 규준이 없어 백분위·표준점수를 제공하지 않습니다. 추가 확인 권고 기준(70%)은 임시값입니다.</li>',
   '<li><b>우연 정답:</b> 선택형은 찍어서 맞힐 수 있습니다(2지선다 50%, 4지선다 25%). 결과표에 우연 정답률을 함께 적었습니다.</li>',
-  '<li><b>합성 음성:</b> 듣기 문항은 브라우저 음성 합성으로 제시해 기기마다 목소리가 다를 수 있습니다. 표준화하려면 녹음한 음성 파일로 바꿔야 합니다.</li>',
+  '<li><b>합성 음성:</b> 한 세션 안에서는 선택한 한국어 음성을 고정하고 음성명·속도·재생시간을 기록하지만, 기기 사이에 같은 음성을 보장하지 못하는 잠정 방식입니다. 표준화 전 고정 음성 자산 또는 검증된 고정 엔진이 필요합니다.</li>',
   '<li><b>형식 차이:</b> 단어 재인은 ROAR처럼 350ms 노출을 썼지만, 묵독 효율의 데모 분량(90초)은 TOSREC(3분)보다 짧습니다. ROAR 기술 매뉴얼은 90초로 줄여도 신뢰도·타당도 변화가 매우 작다고 보고했으나 한국어에서는 확인되지 않았습니다.</li>',
   '<li><b>읽기 부담:</b> 듣기 과제(A, C)도 보기는 글자로 제시되어 보기를 읽는 능력이 일부 섞입니다. 어린 아동용은 그림 보기로 바꾸는 것이 바람직합니다.</li>',
   '<li><b>판정 보류:</b> 연령 규준이 생기기 전이라 난독 위험 판정을 보류했습니다. 규준이 생기면 표준점수로 위험 여부를 판정하고, 진단은 전문가의 종합 평가로 확정합니다.</li>'];
@@ -475,6 +501,7 @@ function drawChoiceReport(original, scope) {
   const sections = [];
   const add = (title, html, cls = '') => sections.push({ title, html, cls });
   add('검사 정보', `<div class="report-grid four"><div><small>실시 방식 · 모듈</small><b>${session.mode === 'module' ? '모듈별 검사' : '전체 흐름'} · ${esc(info.title)}</b></div><div><small>채점 방식</small><b>응답 즉시 자동 채점 (녹음 없음)</b></div><div><small>검사 분량</small><b>${session.length === 'full' ? '전체' : '데모'}</b></div><div><small>문항 버전</small><b>${esc(session.batteryVersion || BATTERY_VERSION)}</b></div></div>`);
+  add('제시 품질과 기술 사양', technicalSpecHtml(session));
   add('핵심 요약', r ? `<div class="overall"><p>${esc(info.title)} 전체 정답 ${r.correct}/${r.n} (${r.pct}%, ${ciText(r.correct, r.n)}).</p></div>${findingsHtml(choiceFindings(c, scope), '분석')}` : '<p class="quiet">이 기록에는 이 모듈의 응답이 없습니다.</p>');
   add('하위검사 결과', choiceTableHtml(c, [scope]));
   add('문항별 근거 추적', choiceTraceHtml(c, scope));
@@ -589,8 +616,9 @@ function drawReport(original, scope = 'all') {
   const add = (title, html, cls = '') => sections.push({ title, html, cls });
   add('검사 품질과 기본 정보', `
     <div class="report-grid four"><div><small>실시 방식 · 모듈</small><b>${session.mode === 'module' ? '모듈별 검사' : '전체 흐름'} · ${session.modules.map(moduleName).join(', ') || '–'}</b></div><div><small>채점 방식</small><b>자동 채점 · ${esc(session.sttModelLabel || '음성인식')}</b></div><div><small>채점 반영 / 전체 (무효 음성)</small><b>${(showD ? d.usable.length : 0) + (showF ? f.done.length : 0)} / ${(showD ? d.decoding.length : 0) + (showF ? f.passages.length : 0)} (${d.invalid.length + (showF ? f.passages.filter(p => p.response.adjudication?.status === 'INVALID_AUDIO').length : 0)})</b></div><div><small>장치 점검</small><b>${esc(session.deviceCheck?.quality?.flags?.join(', ') || (session.demo ? '예시 자료' : '기록 없음'))}</b></div></div>
+    ${technicalSpecHtml(original)}
     ${full && session.screening?.decision ? `<h4>선별 결과와 경로</h4>${screeningSummaryHtml(session.screening)}${session.routing && (session.routing.added.length || session.routing.removed.length) ? `<p class="notice">추천 경로 조정: 추가 ${esc(session.routing.added.join(', ') || '없음')} · 제외 ${esc(session.routing.removed.join(', ') || '없음')}</p>` : ''}` : ''}
-    <p class="quiet">버전: 문항 ${esc(session.formVersion)} · 채점 ${esc(S.AUTO_SCORING_VERSION)} · 발음 목록 ${esc(session.pronunciationDictVersion || '–')} · 음성인식 ${esc(session.sttModelVersion || 'not-run')} · 설정 ${esc(S.SCORING_CONFIG.version)}${showD ? ` · 문항 순서 ${session.orderPolicy === 'random' ? '무작위' : '고정'}` : ''}${full ? ` · 선별 규칙 ${esc(session.screening?.decision?.ruleVersion || '–')}` : ''}</p>`);
+    <p class="quiet">버전: 검사 사양 ${esc(session.assessmentSpecVersion || 'legacy')} · 문항 ${esc(session.formVersion)} · 채점 ${esc(S.AUTO_SCORING_VERSION)} · 발음 목록 ${esc(session.pronunciationDictVersion || '–')} · 음성인식 ${esc(session.sttModelVersion || 'not-run')} · 설정 ${esc(S.SCORING_CONFIG.version)}${showD ? ` · 문항 순서 ${session.orderPolicy === 'random' ? '무작위' : '고정'}` : ''}${full ? ` · 선별 규칙 ${esc(session.screening?.decision?.ruleVersion || '–')}` : ''}</p>`);
   add('핵심 요약', `
     <div class="overall">${overallStatement(d, f, session, scope).map(line => `<p>${esc(line)}</p>`).join('') || '<p>자동 채점된 응답이 아직 없습니다.</p>'}</div>
     <ul class="summary-list">${filterLines(summarySentences(d, f)).map(line => `<li>${esc(line)}</li>`).join('')}</ul>

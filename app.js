@@ -2,13 +2,15 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const app = $('#app');
 
-const APP_VERSION = '0.4-demo';
+const APP_VERSION = '0.6.0-prototype';
 const POLICY_VERSION = 'reading-research-policy-0.2';
 const CONTENT_VERSION = 'engineering-form-0.4';
 const RATING_VERSION = 'dual-rater-rule-0.3';
 // 허용 발음 목록의 버전. 표준 발음법(국립국어원 표준어 규정 제2부)을 적용한 후보이며 전문가 검토 전이다.
 const PRONUNCIATION_DICT_VERSION = 'accepted-forms-0.3';
 const S = window.Scoring;
+const SPEC = window.AssessmentSpec;
+SPEC.applyVisualTokens(document.documentElement);
 
 // lexicality: real | nonword, regularity: consistent(표기-발음 일치) | phonological(음운변동 필요)
 // accepted: 허용 발음 목록. 비단어의 허용 발음은 표준발음법을 적용한 후보이며 전문가 검토 전이다.
@@ -101,7 +103,7 @@ const FLUENCY_EVENTS = ['대치', '단어 생략', '행 건너뜀', '삽입', '�
 let state = {
   view: 'home', session: null, stream: null, recorder: null, chunks: [], timer: null,
   seconds: 0, taskQueue: [], taskIndex: 0, currentBlob: null, currentQuality: null,
-  shownAt: null, recordingStartedAt: null
+  shownAt: null, recordingStartedAt: null, choiceExposureTimeout: null, preparedChoices: {}
 };
 
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -124,6 +126,10 @@ const scoredResponses = session => (session.responses || []).filter(response => 
 
 function migrateSession(session) {
   session.schemaVersion ||= '0.2';
+  session.assessmentSpecVersion ||= 'legacy-unrecorded';
+  session.presentationLog ||= [];
+  session.ttsEvents ||= [];
+  session.environment ||= session.deviceMetadata ? { ...session.deviceMetadata, legacy: true } : null;
   session.responses = (session.responses || []).map(response => {
     response.ratings ||= {};
     if (response.rating && !response.ratings.A) {
@@ -188,6 +194,7 @@ function render(name, { history: mode = 'push' } = {}) {
   state.view = name;
   if (state.choiceTimer) { clearInterval(state.choiceTimer); state.choiceTimer = null; }
   if (state.choiceTimeout) { clearTimeout(state.choiceTimeout); state.choiceTimeout = null; }
+  if (state.choiceExposureTimeout) { clearTimeout(state.choiceExposureTimeout); state.choiceExposureTimeout = null; }
   document.onkeydown = null;
   window.speechSynthesis?.cancel();
   const template = $(`#${name}-template`);
@@ -279,8 +286,9 @@ function setup() {
     state.session = {
       id: uid(), participant: form.get('participant').trim(), ageBand: form.get('ageBand'), mode: setupMode.mode, modules: moduleMode ? [...(MODULE_GROUP[setupMode.module] || [setupMode.module])] : [], orderPolicy: form.get('randomOrder') ? 'random' : 'fixed', previewPaths: [], length: form.get('length') || 'demo',
       createdAt: now(), updatedAt: now(), screening: {}, responses: [], status: 'CREATED',
-      formVersion: CONTENT_VERSION, policyVersion: POLICY_VERSION, ratingVersion: RATING_VERSION, pronunciationDictVersion: PRONUNCIATION_DICT_VERSION,
-      sttModelVersion: 'not-connected', schemaVersion: '0.2',
+      appVersion: APP_VERSION, formVersion: CONTENT_VERSION, policyVersion: POLICY_VERSION, ratingVersion: RATING_VERSION, pronunciationDictVersion: PRONUNCIATION_DICT_VERSION,
+      sttModelVersion: 'not-connected', schemaVersion: '0.4', assessmentSpecVersion: SPEC.VERSION,
+      environment: SPEC.environmentSnapshot(window), presentationLog: [], ttsEvents: [],
       deviceMetadata: { userAgent: navigator.userAgent, platform: navigator.platform || 'unknown', language: navigator.language }
     };
     upsertSession(state.session);
@@ -601,6 +609,8 @@ function startTasks(session) {
   session.status = 'IN_PROGRESS';
   session.startedAt = now();
   session.batteryVersion = BATTERY_VERSION;
+  session.assessmentSpecVersion = SPEC.VERSION;
+  session.environment = SPEC.environmentSnapshot(window);
   upsertSession(session);
   // 녹음 과제를 먼저 하고, 선택형 과제는 이어서 한다.
   if (state.taskQueue.length) render('task'); else startChoice(session);
@@ -624,14 +634,33 @@ function buildChoiceQueue(session) {
   return queue;
 }
 
+// 문항 자료는 로컬에 있지만 다음 화면의 보기 순서와 텍스트를 미리 계산해, 현재 응답 뒤의
+// 동기 작업이 자극 제시 시각을 밀지 않게 한다. 준비 선행시간은 각 문항에 저장한다.
+function prepareChoiceStep(index) {
+  if (!state.choiceQueue?.[index] || state.preparedChoices?.[index]) return;
+  const step = state.choiceQueue[index];
+  const item = step.item;
+  const options = !item ? null : step.section.format === 'binary'
+    ? step.section.binary.map(choice => ({ value: choice.value, label: choice.label, key: choice.key }))
+    : fixedOptionOrder(item).map((option, i) => ({ value: option, label: option, key: String(i + 1) }));
+  state.preparedChoices[index] = {
+    index, kind: step.kind, itemId: item?.id || null, sectionId: step.section?.id || null,
+    preparedAt: now(), preparedPerfMs: performance.now(),
+    passage: step.section?.passage ? String(step.section.passage) : '',
+    options, assets: ['local-text', 'fixed-option-order']
+  };
+}
+
 function startChoice(session) {
   state.choiceQueue = buildChoiceQueue(session);
   state.choiceIndex = 0;
   state.choiceDeadlines = {};
   state.listenPlays = {};
+  state.preparedChoices = {};
   session.choiceAnswers ||= [];
   session.choiceSections ||= {};
   if (!state.choiceQueue.length) return finishAssessment(session);
+  prepareChoiceStep(0);
   render('choice');
 }
 
@@ -649,22 +678,68 @@ function finishAssessment(session) {
   render('complete');
 }
 
-// 브라우저 내장 음성 합성(ko-KR). 같은 기기에서는 같은 목소리·속도로 제시된다. 목소리는 기기마다 다를 수 있다(결과지 한계).
-function koreanVoice() { return (window.speechSynthesis?.getVoices() || []).find(voice => /^ko/i.test(voice.lang)) || null; }
-function speak(text) {
-  if (window.ReadingTtsOverride) return window.ReadingTtsOverride(text);
+// 브라우저 내장 음성 합성(ko-KR)은 아직 잠정 제시 수단이다. 한 세션 안에서는 음성을 고정하고,
+// 실제 사용 음성·재생시간·추정 WPM·실패를 모두 저장해 기기 차이가 숨지 않게 한다.
+function koreanVoice(session = state.session) {
+  const pinnedName = session?.ttsProfile?.voice?.name;
+  return SPEC.selectKoreanVoice(
+    window.speechSynthesis?.getVoices() || [],
+    pinnedName && pinnedName !== 'unavailable' ? pinnedName : ''
+  );
+}
+function ensureTtsProfile(session = state.session) {
+  if (!session) return null;
+  const voice = koreanVoice(session);
+  const snapshot = SPEC.voiceSnapshot(voice);
+  session.ttsProfile ||= { engine: SPEC.TTS.engine, status: SPEC.TTS.status, language: SPEC.TTS.language, rate: SPEC.TTS.rate, pitch: SPEC.TTS.pitch, volume: SPEC.TTS.volume, voice: snapshot, selectedAt: now() };
+  // 브라우저가 비동기로 음성 목록을 채웠다면 unavailable 상태만 한 번 갱신한다.
+  if (session.ttsProfile.voice?.name === 'unavailable' && voice) session.ttsProfile = { ...session.ttsProfile, voice: snapshot, selectedAt: now() };
+  return { profile: session.ttsProfile, voice };
+}
+function recordTtsEvent(event, session = state.session) {
+  if (!session) return event;
+  session.ttsEvents ||= [];
+  session.ttsEvents.push(event);
+  session.updatedAt = now();
+  upsertSession(session);
+  return event;
+}
+async function speak(text, context = {}) {
+  const startedAt = now();
+  const started = performance.now();
+  const finish = (ok, extra = {}) => {
+    const durationMs = Math.round(performance.now() - started);
+    return recordTtsEvent({ ok, startedAt, endedAt: now(), durationMs, wpm: ok ? SPEC.estimateWpm(text, durationMs) : null,
+      textLength: String(text || '').length, context, ...extra });
+  };
+  if (window.ReadingTtsOverride) {
+    try {
+      const result = await window.ReadingTtsOverride(text);
+      return finish(result !== false, { engine: 'test-override', voice: { name: 'override', lang: 'ko-KR' } });
+    } catch (error) { return finish(false, { engine: 'test-override', error: String(error?.message || error) }); }
+  }
+  const synth = window.speechSynthesis;
+  if (!synth || !text) return finish(false, { engine: SPEC.TTS.engine, error: !text ? 'EMPTY_TEXT' : 'TTS_UNAVAILABLE' });
+  const selected = ensureTtsProfile();
+  if (!selected?.voice) return finish(false, { engine: SPEC.TTS.engine, voice: selected?.profile?.voice, error: 'KOREAN_VOICE_UNAVAILABLE' });
   return new Promise(resolve => {
-    const synth = window.speechSynthesis;
-    if (!synth || !text) return resolve(false);
     synth.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ko-KR';
-    utterance.rate = 0.9;
-    const voice = koreanVoice();
-    if (voice) utterance.voice = voice;
-    const guard = setTimeout(() => resolve(false), 2500 + text.length * 250);
-    utterance.onend = () => { clearTimeout(guard); resolve(true); };
-    utterance.onerror = () => { clearTimeout(guard); resolve(false); };
+    utterance.lang = SPEC.TTS.language;
+    utterance.rate = SPEC.TTS.rate;
+    utterance.pitch = SPEC.TTS.pitch;
+    utterance.volume = SPEC.TTS.volume;
+    utterance.voice = selected.voice;
+    let settled = false;
+    const complete = (ok, error = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(guard);
+      resolve(finish(ok, { engine: SPEC.TTS.engine, voice: selected.profile.voice, rate: SPEC.TTS.rate, ...(error ? { error } : {}) }));
+    };
+    const guard = setTimeout(() => { synth.cancel(); complete(false, 'TTS_TIMEOUT'); }, SPEC.TTS.timeoutBaseMs + text.length * SPEC.TTS.timeoutPerCharacterMs);
+    utterance.onend = () => complete(true);
+    utterance.onerror = event => complete(false, event.error || 'TTS_ERROR');
     synth.speak(utterance);
   });
 }
@@ -673,6 +748,8 @@ function choice() {
   const session = state.session;
   const step = state.choiceQueue[state.choiceIndex];
   const { module, section } = step;
+  const prepared = state.preparedChoices?.[state.choiceIndex] || null;
+  const preloadLeadMs = prepared ? Math.max(0, Math.round(performance.now() - prepared.preparedPerfMs)) : null;
   const info = CHOICE_MODULES[module];
   const moduleSteps = state.choiceQueue.filter(other => other.module === module);
   const mainItems = state.choiceQueue.filter(other => other.section.id === section.id && other.kind === 'item' && !other.practice);
@@ -704,18 +781,30 @@ function choice() {
     stage.innerHTML = `<p class="eyebrow">${esc(CHOICE_SUBTEST_TITLES[section.subtest] || section.title)}</p>
       <p class="choice-instruction">${esc(section.instruction)}</p>
       <ul class="choice-facts"><li>문항 ${mainItems.length}개${practiceCount ? ` · 먼저 연습 ${practiceCount}개 (점수 제외)` : ''}</li>${limit ? `<li>제한 시간 <b>${limit}초</b> (연습이 끝나면 시작)</li>` : '<li>시간 제한 없음 · 반응 시간은 기록됩니다</li>'}${section.itemTimeoutMs ? `<li>한 문항에 ${section.itemTimeoutMs / 1000}초가 지나면 다음으로 넘어갑니다</li>` : ''}${section.exposureMs ? `<li>글자는 <b>${section.exposureMs / 1000}초</b>만 보였다가 사라집니다. 사라진 뒤에 눌러도 됩니다</li>` : ''}${section.format === 'binary' ? `<li>키보드: <b>${esc(section.binary[0].key)}</b> = ${esc(section.binary[0].label)}, <b>${esc(section.binary[1].key)}</b> = ${esc(section.binary[1].label)}</li>` : '<li>키보드 숫자 1~4로도 고를 수 있어요</li>'}</ul>
-      ${section.audio ? `<div class="sound-check"><button class="secondary" id="sound-test" type="button">🔊 소리 확인</button><span id="voice-status" class="quiet"></span></div>` : ''}
+      <div class="sound-check"><button class="secondary" id="instruction-audio" type="button">🔊 안내 듣기</button>${section.audio ? '<button class="secondary" id="sound-test" type="button">🔊 소리 확인</button>' : ''}<span id="voice-status" class="quiet"></span></div>
       <div class="button-row center"><button class="primary" id="choice-start" type="button">시작</button></div>`;
-    if (section.audio) {
-      const status = () => { $('#voice-status') && ($('#voice-status').textContent = window.ReadingTtsOverride ? '시험용 음성' : koreanVoice() ? `한국어 음성: ${koreanVoice().name}` : '한국어 음성을 찾지 못했습니다. Chrome·Edge 최신 버전을 쓰거나 기기 언어 설정에서 한국어 음성을 추가하세요.'); };
+    const sectionLog = session.choiceSections[section.id] ||= { module, instructionPlays: 0, instructionFailures: 0, audioFailures: 0 };
+    const status = () => {
+      if (!$('#voice-status')) return;
+      const selected = ensureTtsProfile(session);
+      $('#voice-status').textContent = window.ReadingTtsOverride ? '시험용 음성' : selected?.voice ? `잠정 음성: ${selected.profile.voice.name} · 속도 ${selected.profile.rate}` : '한국어 음성을 찾지 못했습니다. 음성 안내가 필요한 검사는 시작하지 마세요.';
+    };
+    status();
+    window.speechSynthesis?.addEventListener?.('voiceschanged', status, { once: true });
+    $('#instruction-audio').onclick = async () => {
+      const outcome = await speak(section.instruction, { kind: 'instruction', module, sectionId: section.id });
+      if (outcome.ok) { sectionLog.instructionPlays++; sectionLog.instructionCompletedAt = now(); }
+      else sectionLog.instructionFailures++;
+      upsertSession(session);
       status();
-      window.speechSynthesis?.addEventListener?.('voiceschanged', status, { once: true });
-      $('#sound-test').onclick = () => speak('소리가 잘 들리면 시작을 눌러 주세요.');
-    }
+    };
+    if ($('#sound-test')) $('#sound-test').onclick = () => speak('소리가 잘 들리면 시작을 눌러 주세요.', { kind: 'sound-check', module, sectionId: section.id });
     $('#choice-start').onclick = () => {
-      session.choiceSections[section.id] = { ...(session.choiceSections[section.id] || {}), module, startedAt: now(), timeLimitSec: limit, items: mainItems.length, voice: section.audio ? (koreanVoice()?.name || 'default') : null };
+      const selected = ensureTtsProfile(session);
+      session.choiceSections[section.id] = { ...sectionLog, module, startedAt: now(), timeLimitSec: limit, items: mainItems.length, voice: selected?.profile?.voice || null, specVersion: SPEC.VERSION };
       advance();
     };
+    prepareChoiceStep(state.choiceIndex + 1);
     return;
   }
 
@@ -733,8 +822,9 @@ function choice() {
   }
 
   const item = step.item;
-  const options = section.format === 'binary' ? section.binary.map(choice => ({ value: choice.value, label: choice.label, key: choice.key })) : fixedOptionOrder(item).map((option, i) => ({ value: option, label: option, key: String(i + 1) }));
-  const passage = section.passage && !section.listenOnly ? `<div class="choice-passage">${esc(section.passage).replace(/\n/g, '<br>')}</div>` : '';
+  const options = prepared?.options || (section.format === 'binary' ? section.binary.map(choice => ({ value: choice.value, label: choice.label, key: choice.key })) : fixedOptionOrder(item).map((option, i) => ({ value: option, label: option, key: String(i + 1) })));
+  const passageText = prepared?.passage || section.passage;
+  const passage = passageText && !section.listenOnly ? `<div class="choice-passage">${esc(passageText).replace(/\n/g, '<br>')}</div>` : '';
   const stimulus = section.format === 'binary' ? `<div class="stimulus ${section.id === 'B-lexical' ? 'word' : 'sentence'}">${esc(item.text)}</div>` : `<p class="choice-stem">${esc(item.stem)}</p>`;
   const listen = section.listenOnly ? `<button class="secondary" id="listen-again" type="button">🔊 이야기 다시 듣기 <span id="listen-left"></span></button>` : '';
   stage.innerHTML = `${step.practice ? '<div class="practice-banner"><b>연습</b><span>점수에 포함되지 않습니다. 답을 고르면 정답을 알려 드려요.</span></div>' : ''}
@@ -746,38 +836,83 @@ function choice() {
   let shownAt = performance.now();
   let replays = 0;
   let answered = false;
+  let presentation = { status: 'VALID', valid: true, targetMs: section.exposureMs || null, actualMs: null, driftMs: null, endedBy: null, toleranceMs: SPEC.PRESENTATION.exposureToleranceMs, preloadLeadMs };
   const presentedAt = now();
+  const setOptionsDisabled = disabled => $$('.choice-option').forEach(button => { button.disabled = disabled; });
+  const finishExposure = endedBy => {
+    if (!section.exposureMs || presentation.actualMs != null) return presentation;
+    if (state.choiceExposureTimeout) { clearTimeout(state.choiceExposureTimeout); state.choiceExposureTimeout = null; }
+    presentation = { ...presentation, ...SPEC.evaluateExposure(section.exposureMs, performance.now() - shownAt, endedBy) };
+    return presentation;
+  };
   const answer = (value, { noResponse = false } = {}) => {
     if (answered) return;
     answered = true;
     if (state.choiceTimeout) { clearTimeout(state.choiceTimeout); state.choiceTimeout = null; }
-    const correct = !noResponse && value === item.answer;
+    finishExposure('response');
+    const rawCorrect = !noResponse && value === item.answer;
     const rtMs = noResponse ? null : Math.round(performance.now() - shownAt);
     $$('.choice-option').forEach(button => { button.disabled = true; if (button.dataset.value === value) button.classList.add('chosen'); });
     if (step.practice) {
       const right = section.format === 'binary' ? section.binary.find(choice => choice.value === item.answer).label : item.answer;
       const feedback = $('#choice-feedback');
-      feedback.textContent = correct ? '맞았어요!' : `정답은 “${right}”예요.`;
+      feedback.textContent = SPEC.practiceFeedback({ practice: step.practice, correct: rawCorrect, rightAnswer: right });
       feedback.classList.remove('hidden');
-      setTimeout(advance, correct ? 700 : 1600);
+      setTimeout(advance, rawCorrect ? 700 : 1600);
       return;
     }
+    const scoringStatus = presentation.valid === false ? 'PRESENTATION_INVALID' : 'VALID';
+    session.presentationLog ||= [];
+    session.presentationLog.push({ itemId: item.id, sectionId: section.id, module, ...presentation, recordedAt: now() });
     session.choiceAnswers.push({ module, sectionId: section.id, subtest: item.subtest || section.subtest, itemId: item.id, type: item.type, response: value, answer: item.answer,
-      correct, rtMs, noResponse, replays, presentedAt, battery: BATTERY_VERSION });
+      correct: rawCorrect, rawCorrect, rtMs, noResponse, replays, presentedAt, battery: BATTERY_VERSION, scoringStatus, presentation, specVersion: SPEC.VERSION });
     session.updatedAt = now();
     advance();
   };
   $$('.choice-option').forEach(button => button.onclick = () => answer(button.dataset.value));
   document.onkeydown = event => {
     const option = options.find(choice => choice.key.toLowerCase() === event.key.toLowerCase());
-    if (option) { event.preventDefault(); answer(option.value); }
+    if (option && !$$('.choice-option').every(button => button.disabled)) { event.preventDefault(); answer(option.value); }
   };
   if (section.itemTimeoutMs) state.choiceTimeout = setTimeout(() => answer(null, { noResponse: true }), section.itemTimeoutMs);
-  // ROAR 단어 재인처럼 글자열을 잠깐(350ms)만 보여 주고 '+'로 가린다. 한 글자씩 소리 내어 읽는 전략 대신 자동 재인을 보게 한다. 응답 시간 제한은 없다.
-  if (section.exposureMs) state.choiceTimeout = setTimeout(() => { const shown = $('.choice-stage .stimulus, #choice-stage .stimulus'); if (shown && !answered) { shown.textContent = '+'; shown.classList.add('masked'); } }, section.exposureMs);
+  // 첫 paint 경계에서 고해상도 시계를 시작하고 실제 마스킹 시각을 저장한다.
+  // 메인 스레드가 막혀 허용 오차보다 오래 보인 문항은 PRESENTATION_INVALID로 남겨 점수에서 제외한다.
+  if (section.exposureMs) {
+    setOptionsDisabled(true);
+    requestAnimationFrame(paintedAt => {
+      if (answered) return;
+      shownAt = paintedAt;
+      presentation.renderedAt = now();
+      presentation.renderedPerfMs = Math.round(paintedAt);
+      setOptionsDisabled(false);
+      state.choiceExposureTimeout = setTimeout(() => {
+        const shown = $('.choice-stage .stimulus, #choice-stage .stimulus');
+        if (shown && !answered) { shown.textContent = '+'; shown.classList.add('masked'); finishExposure('timer'); }
+      }, section.exposureMs);
+    });
+  }
   // 들려주는 문항: 소리가 끝난 때부터 반응 시간을 잰다 (먼저 눌러도 된다).
   if (item.audio) {
-    const play = () => { replays++; speak(item.audio).then(() => { if (!answered) shownAt = performance.now(); }); };
+    const play = async () => {
+      replays++;
+      setOptionsDisabled(true);
+      const outcome = await speak(item.audio, { kind: 'item', module, sectionId: section.id, itemId: item.id });
+      if (answered) return outcome;
+      const feedback = $('#choice-feedback');
+      if (!outcome.ok) {
+        session.choiceSections[section.id].audioFailures = (session.choiceSections[section.id].audioFailures || 0) + 1;
+        feedback.textContent = '음성을 재생하지 못했습니다. 다시 듣기를 눌러 주세요. 이 상태에서는 응답이 저장되지 않습니다.';
+        feedback.classList.add('presentation-warning');
+        feedback.classList.remove('hidden');
+        upsertSession(session);
+        return outcome;
+      }
+      feedback.classList.add('hidden');
+      feedback.classList.remove('presentation-warning');
+      shownAt = performance.now();
+      setOptionsDisabled(false);
+      return outcome;
+    };
     replays = -1;
     if (!section.listenOnly || state.listenPlays[section.id] != null) play(); else replays = 0;
     $('#replay').onclick = play;
@@ -787,16 +922,26 @@ function choice() {
     const plays = state.listenPlays;
     const left = () => { $('#listen-left').textContent = `(${Math.max(0, 2 - (plays[section.id] || 0))}번 남음)`; $('#listen-again').disabled = (plays[section.id] || 0) >= 2; };
     const playStory = async () => {
-      $$('.choice-option').forEach(button => button.disabled = true);
-      await speak(section.passage);
-      $$('.choice-option').forEach(button => button.disabled = answered);
-      if (item.audio) await speak(item.audio);
+      setOptionsDisabled(true);
+      const story = await speak(section.passage, { kind: 'passage', module, sectionId: section.id, itemId: item.id });
+      const question = item.audio ? await speak(item.audio, { kind: 'item', module, sectionId: section.id, itemId: item.id }) : { ok: true };
+      if (!story.ok || !question.ok) {
+        session.choiceSections[section.id].audioFailures = (session.choiceSections[section.id].audioFailures || 0) + 1;
+        const feedback = $('#choice-feedback');
+        feedback.textContent = '이야기 또는 질문 음성을 재생하지 못했습니다. 다시 듣기를 눌러 주세요. 이 상태에서는 응답이 저장되지 않습니다.';
+        feedback.classList.add('presentation-warning');
+        feedback.classList.remove('hidden');
+        upsertSession(session);
+        return;
+      }
+      setOptionsDisabled(answered);
       shownAt = performance.now();
     };
     if (plays[section.id] == null) { plays[section.id] = 0; playStory(); }
     left();
     $('#listen-again').onclick = () => { plays[section.id] = (plays[section.id] || 0) + 1; session.choiceSections[section.id].storyReplays = plays[section.id]; left(); playStory(); };
   }
+  prepareChoiceStep(state.choiceIndex + 1);
 }
 
 async function saveBlob(key, blob) {
@@ -849,7 +994,14 @@ function task() {
   const stimulus = $('#stimulus');
   stimulus.textContent = item.text;
   stimulus.className = `stimulus ${item.module === 'decoding' ? 'word' : 'passage'}`;
-  $('#task-instruction').textContent = item.module === 'decoding' ? '화면의 글자열을 한 번 소리 내어 읽어주세요.' : '글을 처음부터 끝까지 소리 내어 읽어주세요. 60초가 지나도 끝까지 계속 읽습니다.';
+  const taskInstruction = item.module === 'decoding' ? '화면의 글자열을 한 번 소리 내어 읽어주세요.' : '글을 처음부터 끝까지 소리 내어 읽어주세요. 60초가 지나도 끝까지 계속 읽습니다.';
+  $('#task-instruction').textContent = taskInstruction;
+  const taskVoice = ensureTtsProfile(state.session);
+  $('#task-voice-status').textContent = taskVoice?.voice ? `잠정 음성: ${taskVoice.profile.voice.name}` : '한국어 음성 안내를 사용할 수 없습니다.';
+  $('#task-instruction-audio').onclick = async () => {
+    const outcome = await speak(taskInstruction, { kind: 'instruction', module: item.module, itemId: item.id });
+    $('#task-voice-status').textContent = outcome.ok ? `안내 재생 완료 · ${outcome.voice?.name || '시험용 음성'}` : '안내를 재생하지 못했습니다. 검사자가 같은 내용을 말로 설명해 주세요.';
+  };
   $('#quit-task').onclick = () => {
     if (confirm('현재까지 저장한 응답은 남겨두고 검사를 중단할까요?')) {
       state.session.status = 'INTERRUPTED';
@@ -934,6 +1086,7 @@ function task() {
         id: responseId, stimulusId: item.id, module: item.module, target: item.text, expected: item.accepted?.[0] || item.expected || '', kind: item.kind,
         condition: item.condition || '', rule: item.rule || '', practice: Boolean(item.practice), audioKey,
         presentationIndex: state.taskIndex, orderPolicy: state.session.orderPolicy || 'fixed',
+        presentation: { status: 'VALID', valid: true, specVersion: SPEC.VERSION, stimulusType: item.module === 'decoding' ? 'word' : 'passage', shownAt: state.shownAt },
         stimulusShownAt: state.shownAt, recordingStartedAt: state.recordingStartedAt, recordingStoppedAt: now(),
         durationMs: state.currentQuality?.durationMs || state.seconds * 1000, first60Reached: item.module === 'fluency' && state.seconds >= 60,
         accepted: item.accepted || [], lexicality: item.lexicality || '', regularity: item.regularity || '', reviewNote: item.reviewNote || '', passageMeta: item.meta || null,
@@ -1758,7 +1911,7 @@ function drawResult(session) {
   }).join('');
 
   $('#result-content').innerHTML = `<div class="notice warning"><b>표준화 전 연구판입니다.</b> 규준이 없어 표준점수·백분위·난독 위험 판정은 보류하고 두 채점자가 확인한 원점수와 보류 상태만 표시합니다.${session.demo ? ' <b>이 기록은 화면 시연용 예시 자료입니다.</b>' : ''}</div>
-  <div class="result-meta"><span>참여자 ${esc(session.participant)}</span><span>${esc(session.ageBand)}</span><span>상태 ${esc(session.status)}</span><span>문항 ${esc(session.formVersion)}</span><span>채점 ${esc(session.ratingVersion)}</span><span>발음 목록 ${esc(session.pronunciationDictVersion || '0.2 이전')}</span><span>음성인식 ${esc(session.sttModelVersion || 'not-run')}</span></div>
+  <div class="result-meta"><span>참여자 ${esc(session.participant)}</span><span>${esc(session.ageBand)}</span><span>상태 ${esc(session.status)}</span><span>검사 사양 ${esc(session.assessmentSpecVersion || 'legacy')}</span><span>문항 ${esc(session.formVersion)}</span><span>채점 ${esc(session.ratingVersion)}</span><span>발음 목록 ${esc(session.pronunciationDictVersion || '0.2 이전')}</span><span>음성인식 ${esc(session.sttModelVersion || 'not-run')}</span></div>
   <div class="result-kpis"><article><small>해독 정확</small><b>${correct} / ${scoredDecoding.length}</b><span>AGREE만: ${agreeOnly.filter(isCorrect).length} / ${agreeOnly.length}</span></article><article><small>전문가 보류</small><b>${expert}</b><span>점수에서 제외</span></article><article><small>채점 진행 중</small><b>${pending}</b><span>독립 채점 또는 합의 필요</span></article><article><small>무효 음성</small><b>${invalid}</b><span>원점수에서 제외</span></article></div>
   <section class="result-section"><h2>단어 해독 2×2 조건별 원점수</h2>${scoredDecoding.length ? grid : '<p class="quiet">확정된 해독 문항이 없습니다.</p>'}<div class="chip-row">${Object.entries(errorCounts).map(([name, count]) => `<span class="marker-chip">${esc(name)} ${count}</span>`).join('') || '<span class="quiet">확정 문항에 기록된 오류 사건 없음</span>'}${median != null ? `<span class="marker-chip onset">반응 시작 중앙값 ${seconds1(median)}</span>` : ''}</div></section>
   <section class="result-section"><h2>문항별 근거 추적</h2><div class="table-wrap"><table class="item-table"><thead><tr><th>문항</th><th>표기 [허용 발음]</th><th>전사</th><th>판정</th><th>오류 위치</th><th>반응 시작</th><th>상태</th></tr></thead><tbody>${itemRows}</tbody></table></div></section>
@@ -1783,7 +1936,8 @@ function buildDemoSession() {
     createdAt: created, updatedAt: created, startedAt: created, screening: { words, sentence, decision, contentVersion: 'screening-form-0.2', finishedAt: created }, responses: [], status: 'SCORED', length: 'full',
     routing: { recommended: decision.paths, final: decision.paths, added: [], removed: [], decidedAt: created },
     previewPaths: decision.paths, previewLog: PREVIEW_SUBTESTS.filter(subtest => decision.paths.includes(subtest.pathId)).map(subtest => subtest.id), orderPolicy: 'fixed',
-    formVersion: CONTENT_VERSION, policyVersion: POLICY_VERSION, ratingVersion: RATING_VERSION, pronunciationDictVersion: PRONUNCIATION_DICT_VERSION, sttModelVersion: 'not-run', schemaVersion: '0.3'
+    appVersion: APP_VERSION, formVersion: CONTENT_VERSION, policyVersion: POLICY_VERSION, ratingVersion: RATING_VERSION, pronunciationDictVersion: PRONUNCIATION_DICT_VERSION, sttModelVersion: 'not-run', schemaVersion: '0.4',
+    assessmentSpecVersion: SPEC.VERSION, environment: SPEC.environmentSnapshot(window), presentationLog: [], ttsEvents: []
   };
   // 예시 음성인식 결과: [문항 ID, 인식된 말, 반응 시작 ms]. 실제 검사에서는 녹음에서 이 값이 나온다.
   const decodingPlan = [
@@ -1833,7 +1987,8 @@ function buildDemoSession() {
       const options = section.format === 'binary' ? section.binary.map(option => option.value) : item.options;
       const response = wrong ? options.find(option => option !== item.answer) : item.answer;
       const rtMs = (section.format === 'binary' ? 900 : 2200) + rtSeed * (section.format === 'binary' ? 12 : 40);
-      session.choiceAnswers.push({ module, sectionId: section.id, subtest: item.subtest || section.subtest, itemId: item.id, type: item.type, response, answer: item.answer, correct: !wrong, rtMs, noResponse: false, replays: 0, presentedAt: created, battery: BATTERY_VERSION });
+      session.choiceAnswers.push({ module, sectionId: section.id, subtest: item.subtest || section.subtest, itemId: item.id, type: item.type, response, answer: item.answer, correct: !wrong, rawCorrect: !wrong, rtMs, noResponse: false, replays: 0, presentedAt: created, battery: BATTERY_VERSION, scoringStatus: 'VALID', specVersion: SPEC.VERSION,
+        presentation: { status: 'VALID', valid: true, targetMs: section.exposureMs || null, actualMs: section.exposureMs || null, driftMs: 0, endedBy: section.exposureMs ? 'timer' : null, toleranceMs: SPEC.PRESENTATION.exposureToleranceMs, preloadLeadMs: 500 } });
     }
   }
   session.status = 'SCORED';

@@ -148,6 +148,7 @@
       <div class="task-stage">
         <div id="practice-banner" class="practice-banner hidden"><b>연습 항목</b><span>녹음 방법을 확인하는 단계이며 점수에 포함되지 않습니다.</span></div>
         <p id="task-instruction" class="task-instruction">화면의 낱말을 소리 내어 읽어주세요.</p>
+        <div class="instruction-audio"><button class="secondary compact-button" id="task-instruction-audio" type="button">🔊 안내 듣기</button><span id="task-voice-status" class="quiet"></span></div>
         <div id="task-tags" class="task-tags" aria-label="항목 정보"></div>
         <div id="stimulus" class="stimulus word">나무</div>
         <div class="record-panel">
@@ -223,6 +224,7 @@
     </section>
   </template>
 
+  <script src="assessment-spec.js"></script>
   <script src="scoring.js"></script>
   <script src="catalog.js"></script>
   <script src="battery.js"></script>

@@ -22,6 +22,11 @@ for (const marker of ['localStorage', 'indexedDB', 'MediaRecorder', 'readingSess
   assert.ok(js.includes(marker), `${marker} 기능이 없습니다.`);
 }
 
+for (const marker of ['assessmentSpecVersion', 'PRESENTATION_INVALID', 'practiceFeedback', 'prepareChoiceStep', 'task-instruction-audio']) {
+  assert.ok(js.includes(marker) || html.includes(marker), `${marker} 측정 품질 연결이 없습니다.`);
+}
+assert.ok((await readFile(new URL('../report.js', import.meta.url), 'utf8')).includes('technicalSpecHtml'), '결과지 기술 사양표가 없습니다.');
+
 assert.ok(html.includes('표준화 전 연구판'), '표준화 전 단계 안내가 없습니다.');
 assert.ok(html.includes('app.js'), 'app.js 연결이 없습니다.');
 assert.ok(html.includes('styles.css'), 'styles.css 연결이 없습니다.');
@@ -33,7 +38,7 @@ import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const scripts = [...html.matchAll(/<script src=["']([^"']+)["']/g)].map(match => match[1]).filter(src => !/^https?:/.test(src));
-assert.deepEqual(scripts, ['scoring.js', 'catalog.js', 'battery.js', 'report.js', 'app.js'], `스크립트 순서: ${scripts}`);
+assert.deepEqual(scripts, ['assessment-spec.js', 'scoring.js', 'catalog.js', 'battery.js', 'report.js', 'app.js'], `스크립트 순서: ${scripts}`);
 const bundle = (await Promise.all(scripts.map(src => readFile(new URL(`../${src}`, import.meta.url), 'utf8')))).join('\n;\n');
 const bundlePath = join(mkdtempSync(join(tmpdir(), 'kra-')), 'bundle.js');
 writeFileSync(bundlePath, bundle);
