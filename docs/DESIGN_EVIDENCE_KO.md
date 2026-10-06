@@ -1,4 +1,6 @@
-# 설계 근거서: 6개 모듈 읽기평가 프로토타입 (v0.6.0)
+# 설계 근거서: 한국어 읽기평가 프로토타입 (v0.15.0)
+
+> 2026-10-06 갱신: 문항 특징·비단어 짝맞춤·B 병렬형/실시 품질·지문/선택지 감사·공개 음성/파일럿 분석은 [V0_15_EVIDENCE_MATRIX_KO.md](V0_15_EVIDENCE_MATRIX_KO.md)를 우선한다. 문항 출처·B 45초 형식·C 합성/파생 결합·분해는 [V0_10_EVIDENCE_ENGINEERING_KO.md](V0_10_EVIDENCE_ENGINEERING_KO.md), 검사 역할은 [V0_9_EVIDENCE_ARCHITECTURE_KO.md](V0_9_EVIDENCE_ARCHITECTURE_KO.md), UI·TTS·성능은 [V0_8_DESIGN_RATIONALE_KO.md](V0_8_DESIGN_RATIONALE_KO.md)를 함께 본다. 충돌하면 v0.15 문서와 현재 코드를 기준으로 한다.
 
 이 문서는 프로토타입의 설계 결정마다 **무엇을 만들었는지(코드 위치)**와 **왜 그렇게 만들었는지(근거)**를 짝지어 기록한다.
 근거는 2026-09-30에 원문 또는 공식 서지 레코드를 직접 열어 확인했다. 확인 수준은 다음과 같이 표시한다.
@@ -29,7 +31,7 @@
 | 짧은 공통 선별 → 필요한 세부 경로로 안내, 복수 경로 허용 | `screen()`, `S.screeningDecision` | 브리핑 v1.2 1·2장 (선별은 진단이 아니라 "어디를 더 볼지" 정하는 입구) | 📐 |
 | 이번 버전의 선별은 기초 해독(→A)과 유창성(→B) 두 축만 실시 | 단어 8개 + 문장 낭독 1편 | 브리핑 2장 선별 축 중 두 핵심 모듈 우선 (사용자 결정, 2026-10-01) | 📐 |
 | 선별 단어를 세부검사와 같은 2×2에서 칸마다 2개씩 뽑아 "모듈 안 중점 확인 포인트"를 정함 | `focus` (음운변동 규칙, 비단어 해독, 기초 대응, 머뭇거림, 낭독 정확도, 속도) | 해독 2×2 설계의 근거와 동일 (2장) | 📐 |
-| "정확하지만 느림 → B", "부정확 → A" | 문장 낭독 정확도와 분당 정확 음절 | 브리핑 2장 표 "정확하지만 느림 → B 유창성" | 📐 |
+| 낭독 속도는 기술 통계로 저장하되 연령 규준 전에는 자동 분기에 쓰지 않음 | 문장 낭독 정확도와 분당 정확 음절, `sentenceMinRate: null` | v0.7의 연령별 임시값은 규준 근거가 부족했다. 연령별 규준·민감도/특이도 확보 뒤 분기값을 결정 | 📐 |
 | 선별도 참여자가 혼자 읽고 시스템이 자동 채점 | 낱말이 뜨면 바로 녹음, '다음'으로 넘김 → 음성인식 → 자동 채점 → `screeningDecision` | 혼자 실시하는 온라인 읽기평가 선례: Yeatman et al. (2021) ROAR | 📐 / ✅ |
 | 검사 분량: 데모(선별 단어 4·해독 8문항·지문 1편)와 전체(8·16·2) | 정보 입력 화면 `length`, `LENGTHS` | 프로토타입 시연용 축소. 2×2 칸마다 2문항(선별은 1문항)을 남겨 조건 비교 구조는 유지 | 📐 |
 | 기준값은 임시값, 경계에서는 경로를 포함 (위음성 회피) | `SCREENING_CONFIG` (`screening-rule-0.2-provisional`) | 선별 도구는 민감도를 우선한다는 권고: Jenkins, Hudson & Johnson (2007) — 원문 대조 필요. 브리핑 10장: cutoff는 민감도·특이도로 파일럿 검증 후 확정 | 🔶 |
@@ -69,9 +71,9 @@
 | 설계 결정 | 구현 | 근거 | 확인 |
 |---|---|---|---|
 | Whisper를 쓴다 | `asr.js`, Transformers.js 3.8.1 | 68만 시간 다국어 약지도 학습, 한국어 포함: Radford et al. (2023) | ✅ |
-| 기본 모델은 **Whisper large-v3-turbo** (WebGPU, 4비트 양자화, 약 0.6~0.8GB 1회 다운로드). WebGPU가 없으면 Whisper small, 그다음 base | `onnx-community/whisper-large-v3-turbo_timestamped` → `whisper-small_timestamped` → `whisper-base_timestamped` | turbo는 large-v3의 디코더를 32층에서 4층으로 줄인 809M 모델로 "약간의 품질 저하로 훨씬 빠름"(OpenAI 모델 카드). 2024-10-01 공개, 다국어 성능은 large-v2와 비슷(OpenAI whisper Discussion #2363). 한국어는 CER로 평가 | ✅ |
+| 기본 모델은 **Whisper small** q4/q8. large-v3-turbo는 명시적 정확도 비교 조건에서만 우선 | WebGPU small → WASM small → base; `readingAsrProfile=accuracy`일 때만 turbo 우선 | 참여자 흐름의 다운로드·초기화·추론 부담을 줄이는 공학 후보. 한국어 CER/WER·정오 일치와 RTF를 사람 기준으로 비교해 최종 선택 | 📐 |
 | 음성은 브라우저 밖으로 보내지 않는다 | 브라우저 안(WebGPU/WebAssembly)에서 실행 | 개인 음성 보호 (설계도 6장 데이터 원칙). 클라우드 STT(예: 한국어 특화 상용 API)는 정확도가 더 높을 수 있으나 음성 외부 전송과 키 관리가 필요해 이번 버전에서 제외 | 📐 |
-| 마이크 점검 때 모델을 미리 받는다 | `preloadAsr()`, 첫 화면 '음성인식 모델 미리 받기' | 검사 중·후 대기 시간 줄이기 | 📐 |
+| 참여자 흐름에서는 모델을 받지 않고 연구자가 명시적으로 AI 분석을 요청할 때만 실행 | `DEFERRED_UNTIL_RESEARCHER_REQUEST`, 연구자 검증 화면 `AI 분석` | 다운로드·초기화·추론이 화면 렌더링과 경쟁해 발생한 렉과 종료 대기를 제거 | 📐 |
 | 단어 단위 시각 | `return_timestamps: 'word'`, 실패 시 구간 시각으로 내려감 | Whisper 교차 어텐션 정렬 헤드 + DTW: OpenAI `whisper/timing.py`; Louradour (2023) whisper-timestamped; Transformers.js 문서 | ✅ |
 | 해독 자동 채점: 인식 문자열을 전사 규약으로 바꾸고(띄어 쓴 조각이 목표 길이에 가까우면 다시 읽기 `/`, 짧으면 나누어 읽기 `-`) 허용 발음과 음절 정렬해 정오·오류 위치·표기대로 읽음 판정 | `asrToTranscript`, `autoDecodingRating` | 편집거리 정렬 (Levenshtein, 1966); 설계도 3장 채점 규칙 | ✅ / 📐 |
 | 유창성 자동 채점: 인식 단어열을 지문 어절열에 동적계획법으로 정렬해 대치·생략·삽입을 표시하고, 발화 탐지의 긴 멈춤을 다음 어절에 붙이며, 시간은 발화 시작~끝 | `alignWordsToPassage` (어긋남 비용 0.75 < 전면 대치 1), `autoFluencyRating` | 자동 WCPM이 사람 채점과 3~4단어 이내 (FLORA; Bolaños et al., 2011) | ✅ |
@@ -118,18 +120,18 @@
 
 | 설계 결정 | 구현 | 근거 | 확인 |
 |---|---|---|---|
-| 과제 형식은 공인 검사를 따르고 문항은 새로 만든 후보로 둔다 | `battery.js` (`battery-items-0.1`) | 공인 검사 개발 순서: 형식 → 문항 → 전문가 검토 → 예비검사 → 표준화 | 📐 |
+| 과제 형식은 공인 검사·연구를 참고하고 문항은 새로 만든 후보로 둔다 | `battery.js` (`battery-items-0.2`) | 공인 검사 개발 순서: 형식 → 문항 → 전문가 검토 → 예비검사 → 표준화. 형식 차용은 규준 차용이 아님 | 📐 |
 | 음운인식: 음절 탈락 → 음소 탈락 → 음소 대치, 듣고 4지선다 | `A-phon` 9문항 | KOLRA 음운인식(탈락·합성, 음절·음소 수준), CTOPP-2 Elision. 말로 답하는 원 형식을 선택형으로 바꾼 것은 우리 설계 | 🔶 / 📐 |
 | 글자-소리 대응: 최소대립 보기(평음·격음·경음, 받침, 모음) | `A-letter` 8문항 | RA-RCP 자모지식 하위검사; KOLRA에 자모지식이 없다는 지적(김영욱 외, 2016) | 🔶 |
-| 단어 재인: 글자열 350ms 노출 후 '+'로 가림, 실제/비단어 판단, 응답 시간 무제한 | `B-lexical` 24문항(12+12), `exposureMs` | ROAR(Yeatman 외, 2021): 76시행 신뢰도 .95, WJ와 r=.91; 기술 매뉴얼: 350ms, 시간 제한 없음 | ✅ |
+| 단어 재인: 글자열 350ms 노출 후 '+'로 가림, 실제/비단어 판단, 응답 시간 무제한 | `B-lexical` 연구 확장, 기본 OFF | ROAR 과제 형식의 연구 근거. 한국어 규준 없음; CLT-R·NISE-B·ACT 핵심 형식으로 직접 이식하지 않음 | ✅ / 📐 |
 | 단어 재인 지표 d′(로그선형 보정)와 정답 반응 시간 중앙값 | `S.dPrime`, `choiceStats` | Green & Swets (1966); Hautus (1995) | ✅ (서지) |
-| 묵독 효율: 문장 참·거짓, 전체 3분, 데모 90초, 정답−오답 | `B-silent` 40문장(참 22·거짓 18) | TOSREC 3분(PRO-ED); ROAR-Sentence(Yeatman 외, 2024) TOSREC과 r=.87, 채점 정답−오답, 90초로 줄여도 영향 매우 작음(기술 매뉴얼) | ✅ |
+| 묵독 효율: 문장 참·거짓, 전체 3분, 데모 90초, 정답−오답 | `B-silent` 연구 확장, 기본 OFF | TOSREC·ROAR-Sentence 형식 근거. 한국어 규준과 구성개념 동등성은 확인 전 | ✅ / 📐 |
 | 문장 작성 원칙: 답이 분명하고 배경지식·어휘 부담이 적은 단언문 | `B-silent` | ROAR-Sentence 문장 작성 원칙 | ✅ |
 | 언어이해는 듣기로 잰다 (해독과 분리) | `C-sentence` (문장 비표시), `C-listen` (`listenOnly`) | Simple View of Reading; KOLRA 핵심검사의 듣기이해 | ✅ / 🔶 |
 | 어휘 3단계(기초·학습·고급) | `C-vocab` 11문항 | 국립국어원 학습용 어휘 목록의 A·B·C 등급 체계를 본뜸. 목록 대조는 아직 안 함 | 📐 |
 | 문장 이해 문항은 어순 전략으로 풀 수 없는 구조(피동·사동·관형절·부정 비교) | `C-sentence` 8문항 | 수용 문법 검사의 일반 형식 | 📐 |
-| 형태소 인식: 동음 형태소·접사·한자어 형태소 | `C-morph` 8문항 | Carlisle (2000) (원문 대조 필요) | 📐 |
-| 글 이해 문항을 사실·추론·평가·복수 글로 나눈다 | `D-fact`, `D-infer`, `D-eval`, `D-multi` | PIRLS 2021 이해 과정; BASA-RC 사실적·추론적·평가적 이해(결과지 샘플); PISA 2018 복수 출처·신뢰성 평가 | ✅ |
+| 형태소 인식: 동음 형태소·접사·한자어 형태소 | `C-morph` 연구 확장, 기본 OFF | 한국어 형태 인식 종단·초기 읽기 연구. 연령 공통 핵심 규준은 없고 현재 문항은 자체 후보 | ✅ / 📐 |
+| 글 이해 기본은 사실·추론, 평가·복수 글은 고차 문해 확장으로 분리 | `D-fact`, `D-infer` 기본; `D-eval`, `D-multi` 기본 OFF | PIRLS 2021 이해 과정; PISA 2018 복수 출처·신뢰성 평가. 연령·난이도 동등화 전 점수 분리 | ✅ / 📐 |
 | 보기 순서는 고정 난수로 섞고 정답 위치를 블록마다 고르게 | `OPTION_ORDERS`, `fixedOptionOrder` | 정답 위치 편향 방지, 참여자 간 동일 순서 | 📐 |
 | 듣기 문항은 브라우저 합성 음성(ko-KR)으로 제시하고 반응 시간은 소리가 끝난 때부터. 한 세션에서는 음성을 고정하고 음성명·속도·재생시간·추정 WPM을 저장 | `assessment-spec.js`, `speak`, `choice()` | 기기 사이 동일 음성을 보장하지 못하는 잠정 방식. 표준화 전에는 고정 음성 자산 또는 검증된 고정 엔진이 필요 | 📐 |
 | 결과지: 정확도 + Wilson 95% CI + 우연 정답률 비교, 관찰→해석→근거, 문항별 추적 | `drawChoiceReport`, `choiceTableHtml` | Wilson (1927); 우연 수준과 구별 안 되면 표시 | ✅ / 📐 |
@@ -162,6 +164,23 @@
 | 다음 문항의 로컬 텍스트·보기 순서를 현재 문항 중 미리 계산 | `prepareChoiceStep`, `preloadLeadMs` | 네트워크 자산은 현재 없음. 고정 음성 자산을 도입하면 별도 prefetch 검사가 필요 | 📐 |
 | 본검사에는 정오 피드백을 주지 않고 연습에만 제공 | `practiceFeedback`, 단위 테스트 | 수행 불안과 다음 문항에 대한 영향 방지. 정식 근거 문헌은 추가 확인 필요 | 📐 |
 | ASR 검증은 전사와 채점 성능을 분리 | `transcriptionError`, `asrBenchmarkSummary`, `tools/asr_benchmark.mjs` | CER/WER, 정오 일치·κ, real-time factor를 함께 보고. 실제 한국어 녹음 기준 자료는 아직 없음 | 📐 |
+
+## 12. 실시 환경과 렉 통제 (v0.7)
+
+| 설계 결정 | 구현 | 근거·한계 | 확인 |
+|---|---|---|---|
+| 참여자 첫 화면에는 검사 시작 한 개를 주 행동으로 두고 연구자 도구를 분리 | `home-template`, `.research-entry` | 참여자에게 내부 모델·결과지 메뉴를 노출하면 현재 과제와 무관한 선택 부담이 생김. Nielsen의 시스템 상태 가시성·미니멀 디자인 원칙을 적용 | 📐 / 사용자 확인 전 |
+| 한국어 읽기 자극은 Noto Sans KR 웹폰트, 왼쪽 정렬, 행폭 34ch, 행간 1.65~1.7 후보 | `assessment-spec-0.2`, Google Fonts 사전 로드 | 작은 화면 한글 연구의 열린 속공간·두꺼운 획·넓은 자간 제안, WCAG 시각적 표현의 행간·양끝 맞춤 회피. 특정 대상에게 최적이라는 뜻은 아니며 파일럿 전 후보 | 🔶 / 📐 |
+| 화면 폭만으로 글자 크기를 정하지 않고 85.6mm 카드 또는 100mm 자로 CSS px/mm 보정; 준비물이 없으면 기본값으로 진행하고 미보정을 기록 | `preflight`, `calibrationFromReference`, `defaultCalibration` | 한국어 글자 가독성은 연령·시거리·글꼴의 영향을 받음. CSS px는 물리 단위가 아니며 신용카드는 필수일 이유가 없음 | 🔶 / 📐 |
+| 약 50cm 시거리와 화면 배율 유지 여부를 실시자가 확인 | preflight 확인란, `environment` | 시거리는 자동 측정할 수 없으므로 자기확인값으로 저장. 실제 거리 정확도와 교정 시력은 별도 연구기록이 필요 | 📐 |
+| 검사 중과 완료 화면 모두 Whisper를 실행하지 않고 연구자 요청 때 처리 | 녹음 응답의 `DEFERRED_UNTIL_RESEARCHER_REQUEST` | 렌더링 경쟁뿐 아니라 완료 뒤 수분 대기도 제거. 분석 완료 전 참여자 결과에는 `분석 전`으로 표시 | 📐 |
+| 다음 두 선택형 화면은 분리 DOM 템플릿으로 사전 생성 | `prepareChoiceStep`, `queueChoicePreparation` | 자극 시점의 문자열 구성·DOM 파싱 비용을 유휴 시간으로 이동 | 📐 |
+| 두 프레임 워밍업, Long Task, 프레임 간격, 실제 노출 편차를 함께 기록 | `PerformanceObserver`, `requestAnimationFrame` | 단순 설정값이 아니라 브라우저가 실제로 제시한 조건을 사후 판정. Long Tasks API 미지원 브라우저는 미지원으로 명시 | 📐 |
+| 검증된 고정 음원을 우선하고 없을 때 Natural/Neural 계열 기기 음성을 연구자가 비교·평가해 고정 | `tts-assets.js`, `selectKoreanVoice`, TTS 후보 검증 화면 | 동일 음원은 기기 간 재현성이 높음. 브라우저 후보 사용 시 음성명·속도·평가·WPM·SPM을 저장하며 실제 자연스러움 판단은 연구자가 수행 | 📐 / 청취평가 대상 |
+| D 글 이해 뒤 L0/L1/L2를 별도 실시하고 기본 점수와 분리 | `support-pilot-0.1`, `supportExperimentHtml` | 무도움 기준 수행과 지원 반응을 섞지 않음. 참여자 코드로 조건·동형 후보를 회전하지만 실제 동형성은 파일럿 필요 | 📐 |
+| 사람 전사 입력 후 CER·WER·RTF·정오 일치·κ를 결과지에서 자동 계산 | `autoVerification`, `asrBenchmarkSummary` | ASR 전사 오류와 참여자 읽기 오류를 사람 기준 자료로 분리해 평가 | 📐 / 실제 녹음 필요 |
+
+세부 전후 비교와 완료/미완료 구분은 `docs/V0_8_BEFORE_AFTER_KO.md`에 기록한다.
 
 ## 참고문헌
 

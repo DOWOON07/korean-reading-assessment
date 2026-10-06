@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="../styles.css">
+  <script src="../evidence-engine.js"></script>
+  <script src="../item-bank.js"></script>
+  <style>body{background:#fff}.harness{padding:8px;max-width:950px;margin:auto}.harness .task-instruction{margin:4px 0}.harness .stimulus{margin:8px auto}#audit{position:fixed;left:-9999px}</style>
+</head>
+<body>
+  <main class="harness">
+    <p class="task-instruction">낱말을 왼쪽에서 오른쪽으로 소리 내어 읽어주세요.</p>
+    <div class="stimulus word-list" id="stimulus" aria-label="45초 낱말 읽기"></div>
+  </main>
+  <pre id="audit">WAIT</pre>
+  <script>
+    const form = ReadingItemBank.B_WORD_EFFICIENCY_FORMS.A;
+    const stimulus = document.getElementById('stimulus');
+    const requestedWidth = Number(new URLSearchParams(location.search).get('contentWidth')) || null;
+    if (requestedWidth) document.querySelector('.harness').style.width = `min(${requestedWidth}px, 100%)`;
+    stimulus.innerHTML = form.words.map((word, index) => `<span data-word-index="${index}">${word.text}</span>`).join('');
+    const runAudit = () => {
+      const nodes = [...stimulus.querySelectorAll('[data-word-index]')];
+      const rects = nodes.map(node => node.getBoundingClientRect());
+      const visible = rects.filter(rect => rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight).length;
+      const columns = new Set(rects.map(rect => Math.round(rect.left))).size;
+      const rows = new Set(rects.map(rect => Math.round(rect.top))).size;
+      const result = { width: innerWidth, targetContentWidth: requestedWidth || innerWidth, height: innerHeight, items: nodes.length, visible, columns, rows,
+        horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1 || stimulus.scrollWidth > stimulus.clientWidth + 1 };
+      result.valid = result.items === 60 && result.visible === 60 && result.columns === 5 && result.rows === 12 && !result.horizontalOverflow;
+      document.getElementById('audit').textContent = JSON.stringify(result);
+      document.body.dataset.auditReady = 'true';
+      document.body.dataset.auditValid = String(result.valid);
+    };
+    // headless --dump-dom이 fonts.ready보다 먼저 종료되는 환경도 있어 1차 측정을 즉시 남기고,
+    // 글꼴 준비 뒤 같은 감사를 다시 실행한다.
+    runAudit();
+    document.fonts.ready.then(() => requestAnimationFrame(() => requestAnimationFrame(runAudit)));
+  </script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "version": "public-speech-registry-0.1",
+  "updatedAt": "2026-10-06",
+  "datasets": [
+    {
+      "id": "ksponspeech",
+      "title": "KsponSpeech: Korean Spontaneous Speech Corpus",
+      "task": "Korean spontaneous-speech ASR baseline",
+      "source": "https://doi.org/10.3390/APP10196936",
+      "access": "AI Hub account and dataset terms required",
+      "metrics": ["CER", "WER", "sWER", "RTF"],
+      "status": "DOWNLOAD_REQUIRED_NOT_BUNDLED",
+      "limitation": "일반 자발화 자료이므로 읽기곤란 참여자의 낭독 타당도를 대신하지 않음"
+    },
+    {
+      "id": "common-voice-ko-26",
+      "title": "Mozilla Common Voice Scripted Speech 26.0 - Korean",
+      "task": "Korean read-speech ASR baseline",
+      "source": "https://commonvoice.mozilla.org/en/datasets",
+      "license": "CC0-1.0",
+      "status": "DOWNLOAD_REQUIRED_NOT_BUNDLED",
+      "limitation": "공개 낭독자료의 화자·연령 분포와 목표 집단의 차이를 별도 보고해야 함"
+    }
+  ],
+  "interpretation": "공개자료 벤치마크는 모델 후보 탈락과 실행속도 비교용이며, 본 검사의 대상집단 타당화가 아니다."
+}

@@ -3,6 +3,7 @@ import fs from 'fs';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const S = require('../scoring.js');
+const ITEM_BANK = require('../item-bank.js');
 const app = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const stimuli = eval('(' + app.slice(app.indexOf('const stimuli = {') + 'const stimuli = '.length, app.indexOf('\n};', app.indexOf('const stimuli = {')) + 2) + ')');
 const battery = fs.readFileSync(new URL('../battery.js', import.meta.url), 'utf8');

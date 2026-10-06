@@ -2,15 +2,20 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const app = $('#app');
 
-const APP_VERSION = '0.6.0-prototype';
+const APP_VERSION = window.ReadingPrototypeVersion.VERSION;
 const POLICY_VERSION = 'reading-research-policy-0.2';
-const CONTENT_VERSION = 'engineering-form-0.4';
+const CONTENT_VERSION = 'engineering-form-0.7';
+const EXTENSION_POLICY_VERSION = 'core-extension-policy-0.1';
 const RATING_VERSION = 'dual-rater-rule-0.3';
 // 허용 발음 목록의 버전. 표준 발음법(국립국어원 표준어 규정 제2부)을 적용한 후보이며 전문가 검토 전이다.
 const PRONUNCIATION_DICT_VERSION = 'accepted-forms-0.3';
 const S = window.Scoring;
 const SPEC = window.AssessmentSpec;
+const TTS_ASSETS = window.ReadingTtsAssets;
+const ITEM_BANK = window.ReadingItemBank;
+const EVIDENCE = window.ReadingEvidenceEngine;
 SPEC.applyVisualTokens(document.documentElement);
+document.title = `읽기지도 · ${window.ReadingPrototypeVersion.LABEL}`;
 
 // lexicality: real | nonword, regularity: consistent(표기-발음 일치) | phonological(음운변동 필요)
 // accepted: 허용 발음 목록. 비단어의 허용 발음은 표준발음법을 적용한 후보이며 전문가 검토 전이다.
@@ -27,19 +32,20 @@ const stimuli = {
     { id: 'RW-I-02', text: '설날', accepted: ['설랄'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '유음화 (제20항)' },
     { id: 'RW-I-03', text: '같이', accepted: ['가치'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '구개음화 (제17항)' },
     { id: 'RW-I-04', text: '입학', accepted: ['이팍'], lexicality: 'real', regularity: 'phonological', kind: '실제단어', condition: '실제·음운변동', rule: '기식음화 (제12항)' },
-    { id: 'NW-C-01', text: '가몬', accepted: ['가몬'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어', condition: '비단어·표기-발음 일치', rule: '규칙적' },
-    { id: 'NW-C-02', text: '파숨', accepted: ['파숨'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어', condition: '비단어·표기-발음 일치', rule: '규칙적' },
-    { id: 'NW-C-03', text: '버눅', accepted: ['버눅'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어', condition: '비단어·표기-발음 일치', rule: '규칙적' },
-    { id: 'NW-C-04', text: '소덥', accepted: ['소덥'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어', condition: '비단어·표기-발음 일치', rule: '규칙적' },
-    { id: 'NW-I-01', text: '덕무', accepted: ['덩무'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어', condition: '비단어·음운변동', rule: '비음화 (제18항)' },
-    { id: 'NW-I-02', text: '문라', accepted: ['물라'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어', condition: '비단어·음운변동', rule: '유음화 (제20항)' },
-    { id: 'NW-I-03', text: '삭바', accepted: ['삭빠'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어', condition: '비단어·음운변동', rule: '된소리되기 (제23항)' },
-    { id: 'NW-I-04', text: '덥후', accepted: ['더푸'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어', condition: '비단어·음운변동', rule: '기식음화 (제12항)' },
+    { id: 'NW-C-01', text: '두버', accepted: ['두버'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어', condition: '비단어·표기-발음 일치', rule: '규칙적' },
+    { id: 'NW-C-02', text: '머자', accepted: ['머자'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어', condition: '비단어·표기-발음 일치', rule: '규칙적' },
+    { id: 'NW-C-03', text: '바너', accepted: ['바너'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어', condition: '비단어·표기-발음 일치', rule: '규칙적' },
+    { id: 'NW-C-04', text: '우덩', accepted: ['우덩'], lexicality: 'nonword', regularity: 'consistent', kind: '비단어', condition: '비단어·표기-발음 일치', rule: '규칙적' },
+    { id: 'NW-I-01', text: '덕문', accepted: ['덩문'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어', condition: '비단어·음운변동', rule: '비음화 (제18항)' },
+    { id: 'NW-I-02', text: '말논', accepted: ['말론'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어', condition: '비단어·음운변동', rule: '유음화 (제20항)' },
+    { id: 'NW-I-03', text: '텥이', accepted: ['테치'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어', condition: '비단어·음운변동', rule: '구개음화 (제17항)' },
+    { id: 'NW-I-04', text: '덥한', accepted: ['더판'], lexicality: 'nonword', regularity: 'phonological', kind: '비단어', condition: '비단어·음운변동', rule: '기식음화 (제12항)' },
   ],
   fluencyPractice: [
     { id: 'FP-01', kind: '연습 지문', practice: true, text: '아침이 되자 창문으로 밝은 햇빛이 들어왔습니다.' }
   ],
   fluency: [
+    ITEM_BANK.B_WORD_EFFICIENCY,
     { id: 'F-A', kind: '이야기글 초안', condition: '개발용 지문 A', text: '민지는 아침에 작은 우산을 들고 집을 나섰다. 하늘에는 회색 구름이 많았지만 비는 아직 오지 않았다. 학교에 가는 길에 민지는 젖은 강아지 한 마리를 보았다. 민지는 강아지를 가게 처마 아래로 데려가 잠시 비를 피하게 했다. 조금 뒤 주인이 달려와 민지에게 고맙다고 말했다.' },
     { id: 'F-B', kind: '설명글 초안', condition: '개발용 지문 B', text: '나무는 뿌리로 땅속의 물을 빨아들인다. 물은 줄기를 지나 잎까지 올라간다. 잎은 햇빛을 이용해 나무가 자라는 데 필요한 양분을 만든다. 나무는 계절에 따라 모습이 달라지기도 한다. 봄에는 새잎이 나고, 가을에는 잎의 색이 변한다. 여러 나무는 사람과 동물에게 그늘과 보금자리를 제공한다.' }
   ],
@@ -62,11 +68,12 @@ const stimuli = {
 // 검사 분량. 데모는 2×2 조건마다 2문항(선별은 1문항)과 지문 1개로 줄여 5분 안팎에 끝나게 한다.
 // 전체는 위 문항 전부. 문항 수는 프로토타입 단계의 기능 확인용이며 신뢰도 확보에 필요한 수가 아니다.
 const LENGTHS = {
-  demo: { label: '데모', screening: ['S-W1', 'S-W2', 'S-W3', 'S-W4'], decoding: ['RW-C-01', 'RW-C-02', 'RW-I-01', 'RW-I-03', 'NW-C-01', 'NW-C-02', 'NW-I-01', 'NW-I-02'], fluency: ['F-A'] },
+  demo: { label: '데모', screening: ['S-W1', 'S-W2', 'S-W3', 'S-W4'], decoding: ['RW-C-01', 'RW-C-02', 'RW-I-01', 'RW-I-03', 'NW-C-01', 'NW-C-02', 'NW-I-01', 'NW-I-02'], fluency: ['B-WE-01', 'F-A'] },
   full: { label: '전체' }
 };
 function itemSet(session, key) {
-  const all = key === 'screening' ? stimuli.screening.words : stimuli[key];
+  let all = key === 'screening' ? stimuli.screening.words : stimuli[key];
+  if (key === 'fluency') all = all.map(item => item.taskType === 'timed-word-list' ? ITEM_BANK.wordEfficiencyForParticipant(session?.participant) : item);
   const ids = LENGTHS[session?.length || 'full']?.[key];
   return ids ? all.filter(item => ids.includes(item.id)) : all;
 }
@@ -75,7 +82,36 @@ for (const passage of [...stimuli.fluencyPractice, ...stimuli.fluency]) {
   const tokens = S.tokenizePassage(passage.text);
   passage.meta = { eojeol: tokens.length, syllables: S.countSyllables(passage.text), sentences: (passage.text.match(/[.!?]/g) || []).length, contentVersion: CONTENT_VERSION };
 }
+for (const item of stimuli.decoding) item.sourceMeta = ITEM_BANK.A_REAL_WORDS[item.id]
+  ? { ...ITEM_BANK.A_REAL_WORDS[item.id], features: ITEM_BANK.A_WORD_FEATURES[item.id] }
+  : { source: 'nikl-2023-collision-and-bigram-audit', audit: ITEM_BANK.A_NONWORD_AUDITS[item.id], validationStatus: 'DIGITAL_PREFILTER_PASS_WITH_ORTHOGRAPHIC_PROXY_PENDING_PRONUNCIATION_CORPUS_AND_PILOT' };
 const stimulusById = id => [...stimuli.decodingPractice, ...stimuli.decoding, ...stimuli.fluencyPractice, ...stimuli.fluency].find(item => item.id === id);
+
+// A 경로 문항 청사진. 현재 2×2 구조는 코드에서 강제하지만, 빈도·음절 구조 매칭과
+// 전문가 내용타당도·파일럿 문항통계·DIF가 끝나기 전에는 표준화 문항으로 부르지 않는다.
+const A_ITEM_BLUEPRINT = Object.freeze({
+  version: 'a-decoding-blueprint-0.2',
+  design: 'lexicality(real/nonword) × spellingSound(consistent/phonological)',
+  requiredPerCell: 4,
+  selectionGates: ['official-vocabulary-grade-and-homonym-audit', 'spoken-corpus-frequency-audit', 'paired-syllable-and-coda-match', 'official-lexicon-collision-audit', 'orthographic-syllable-bigram-proxy', 'standard-pronunciation-rule-audit', 'pronunciation-corpus-phonotactic-pending', 'pilot-difficulty-discrimination', 'reliability-and-dif'],
+  validationStatus: 'LITERATURE_AND_OFFICIAL_DATA_ENGINEERED_PENDING_PILOT'
+});
+function auditADecodingBlueprint(items = stimuli.decoding) {
+  const counts = {};
+  for (const item of items) counts[`${item.lexicality}:${item.regularity}`] = (counts[`${item.lexicality}:${item.regularity}`] || 0) + 1;
+  const required = ['real:consistent', 'real:phonological', 'nonword:consistent', 'nonword:phonological'];
+  return { version: A_ITEM_BLUEPRINT.version, counts, balanced: required.every(key => counts[key] === A_ITEM_BLUEPRINT.requiredPerCell), validationStatus: A_ITEM_BLUEPRINT.validationStatus };
+}
+const A_BLUEPRINT_AUDIT = Object.freeze(auditADecodingBlueprint());
+
+// D 경로의 동적평가 후보. 세 조건은 서로 다른 문항을 쓰며 참여자 코드로 문항-조건 조합을 회전한다.
+// 동형성이 검증되기 전이므로 기본 글 이해 점수와 절대 합치지 않는다.
+const SUPPORT_EXPERIMENT_VERSION = 'support-pilot-0.1';
+const SUPPORT_FORMS = [
+  { id: 'SUP-A', passage: '학교 옥상에는 빗물을 모으는 통이 있다. 비가 오면 지붕을 따라 흐른 물이 통에 모인다. 학생들은 이 물을 화단에 주어 수돗물 사용을 줄였다.', evidence: '학생들은 이 물을 화단에 주어 수돗물 사용을 줄였다.', question: '빗물 통을 설치한 결과는?', options: ['화단에 쓸 수돗물이 줄었다', '학교에 비가 오지 않았다', '옥상이 더 넓어졌다', '학생 수가 늘었다'], answer: '화단에 쓸 수돗물이 줄었다' },
+  { id: 'SUP-B', passage: '마을 도서관은 책을 늦게 반납하는 사람이 많아 고민했다. 반납일 하루 전에 문자로 알려 주기 시작하자 늦게 돌아오는 책이 줄었고, 다른 사람도 책을 제때 빌릴 수 있었다.', evidence: '반납일 하루 전에 문자로 알려 주기 시작하자 늦게 돌아오는 책이 줄었고', question: '문자 안내가 만든 변화는?', options: ['책이 제때 돌아오는 경우가 늘었다', '도서관의 책이 모두 사라졌다', '대출 기간이 없어졌다', '문자를 받는 사람이 줄었다'], answer: '책이 제때 돌아오는 경우가 늘었다' },
+  { id: 'SUP-C', passage: '공원 산책로의 밤 조명이 너무 밝아 곤충이 모여들었다. 관리소가 빛을 아래쪽으로 비추고 밝기를 낮추자 길은 계속 보였지만 조명 주변의 곤충은 줄었다.', evidence: '빛을 아래쪽으로 비추고 밝기를 낮추자 길은 계속 보였지만 조명 주변의 곤충은 줄었다.', question: '관리소의 해결 방법이 알맞았던 까닭은?', options: ['길을 보이게 하면서 곤충 피해를 줄여서', '산책로를 완전히 어둡게 해서', '곤충을 더 많이 모아서', '공원을 낮에만 열어서'], answer: '길을 보이게 하면서 곤충 피해를 줄여서' }
+];
 
 const TIMED_DECODING = ['첫 오류', '자기수정', '반복', '분절', '소음'];
 const TIMED_FLUENCY = ['오류', '자기수정', '반복', '긴 멈춤', '도움 제공', '외부 방해'];
@@ -102,26 +138,39 @@ const FLUENCY_EVENTS = ['대치', '단어 생략', '행 건너뜀', '삽입', '�
 
 let state = {
   view: 'home', session: null, stream: null, recorder: null, chunks: [], timer: null,
+  recordingDeadlineTimer: null,
   seconds: 0, taskQueue: [], taskIndex: 0, currentBlob: null, currentQuality: null,
-  shownAt: null, recordingStartedAt: null, choiceExposureTimeout: null, preparedChoices: {}
+  shownAt: null, recordingStartedAt: null, recordingStartedPerf: null, currentTaskTiming: null,
+  currentPresentationAudit: null, presentationAuditCleanup: null, recordingStopReason: null,
+  choiceExposureTimeout: null, preparedChoices: {}, performanceObserver: null
 };
 
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 const now = () => new Date().toISOString();
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
-const MODULE_NAMES = { decoding: '단어 해독', fluency: '읽기 유창성', phonology: '글자·소리 처리', silent: '단어 재인·묵독 효율', language: '언어 이해', comprehension: '글 이해' };
+const MODULE_NAMES = { decoding: '단어 해독', fluency: '읽기 유창성', phonology: '글자·소리 처리', silent: '디지털 읽기 연구 확장', language: '언어 이해', comprehension: '글 이해' };
 const moduleName = module => MODULE_NAMES[module] || module;
 // 녹음·음성인식으로 채점하는 모듈과, 보기를 눌러 바로 채점하는 선택형 모듈(battery.js)
 const RECORDING_MODULES = ['decoding', 'fluency'];
 const isChoiceModule = module => Boolean(CHOICE_MODULES[module]);
 // 경로(브리핑 v1.2 A~D)마다 실시하는 모듈
-const PATH_MODULES = { A: ['decoding', 'phonology'], B: ['fluency', 'silent'], C: ['language'], D: ['comprehension'] };
-// 모듈별 검사 카드는 경로 단위로 실시한다: A 카드 = 단어 해독(녹음) + 글자·소리 처리, B 카드 = 낭독(녹음) + 단어 자동성·묵독.
-// 브리핑 v1.2의 경로 A·B 하위검사를 한 번에 모두 실시하고 한 장의 결과지로 본다. 녹음 과제를 먼저 하고, 선택형 과제를 하는 동안 음성인식이 뒤에서 채점한다.
+const PATH_MODULES = { A: ['decoding', 'phonology'], B: ['fluency'], C: ['language'], D: ['comprehension'] };
+const MODULE_PATH = { decoding: 'A', fluency: 'B', language: 'C', comprehension: 'D', phonology: 'A', silent: 'B' };
+// 모듈별 검사 카드는 경로 단위로 실시한다. B의 ROAR/TOSREC 계열 과제는 한국어 규준이
+// 없으므로 기본 B에서 제외하고 연구자 설정을 켠 세션에만 추가한다.
 const MODULE_GROUP = { decoding: PATH_MODULES.A, fluency: PATH_MODULES.B };
 const GROUP_NAMES = { decoding: 'A 글자·소리 처리와 단어 해독', fluency: 'B 읽기 유창성' };
 const groupName = module => GROUP_NAMES[module] || moduleName(module);
-const modulesForPaths = paths => Object.keys(MODULE_NAMES).filter(module => paths.some(path => PATH_MODULES[path]?.includes(module)));
+const modulesForPaths = (paths, options = {}) => {
+  const selected = new Set(paths.flatMap(path => PATH_MODULES[path] || []));
+  if (paths.includes('B') && options.digitalReadingExtensionEnabled) selected.add('silent');
+  return Object.keys(MODULE_NAMES).filter(module => selected.has(module));
+};
+const extensionEnabledForSubtest = (session, subtest) => subtest.status !== 'research' || ({
+  digitalReading: session?.digitalReadingExtensionEnabled,
+  morphology: session?.morphologyExtensionEnabled,
+  advancedComprehension: session?.advancedComprehensionExtensionEnabled
+}[subtest.extension] === true);
 const scoredResponses = session => (session.responses || []).filter(response => !response.practice);
 
 function migrateSession(session) {
@@ -129,6 +178,10 @@ function migrateSession(session) {
   session.assessmentSpecVersion ||= 'legacy-unrecorded';
   session.presentationLog ||= [];
   session.ttsEvents ||= [];
+  session.performanceLog ||= { supported: false, longTasks: [], frameGaps: [] };
+  session.extensionPolicyVersion ||= 'legacy-unrecorded';
+  session.evidenceEngineVersion ||= 'legacy-unrecorded';
+  session.itemEvidenceVersion ||= 'legacy-unrecorded';
   session.environment ||= session.deviceMetadata ? { ...session.deviceMetadata, legacy: true } : null;
   session.responses = (session.responses || []).map(response => {
     response.ratings ||= {};
@@ -161,7 +214,7 @@ function upsertSession(session) {
 // ---------- 화면 이동과 브라우저 뒤로 가기 ----------
 // 화면마다 주소(#이름)와 브라우저 기록을 남겨 브라우저 뒤로/앞으로 버튼과 화면 안의 '← 뒤로'가 같은 방식으로 동작한다.
 // 진행 중인 검사(task)나 선별(screen)을 떠날 때는 확인을 받고, 새로고침 뒤에는 저장된 기록으로 돌아간다.
-const SESSION_VIEWS = new Set(['mic', 'screen', 'route', 'task', 'choice', 'complete']);
+const SESSION_VIEWS = new Set(['preflight', 'mic', 'screen', 'route', 'task', 'choice', 'scaffold', 'complete']);
 const ACTIVE_KEY = 'readingActiveSession';
 
 function restoreActiveSession() {
@@ -181,6 +234,8 @@ function canShow(view) {
 }
 
 function render(name, { history: mode = 'push' } = {}) {
+  const keepScroll = name === 'choice' && state.view === 'choice';
+  const previousScrollY = window.scrollY;
   if (!canShow(name)) {
     // 새로고침 등으로 진행 상태가 사라졌으면 가장 가까운 안전한 화면으로 보낸다.
     name = (name === 'task' || name === 'choice') && state.session ? 'route' : name === 'preview' && state.session ? 'complete' : 'home';
@@ -200,10 +255,10 @@ function render(name, { history: mode = 'push' } = {}) {
   const template = $(`#${name}-template`);
   app.innerHTML = '';
   app.append(template.content.cloneNode(true));
-  app.focus();
-  window.scrollTo(0, 0);
+  app.focus({ preventScroll: true });
+  window.scrollTo(0, keepScroll ? previousScrollY : 0);
   bindCommon();
-  ({ home, setup, mic, screen, route, task, choice, complete, review, result, preview, report }[name] || (() => {}))();
+  ({ home, setup, preflight, mic, screen, route, task, choice, scaffold, complete, review, result, preview, report, 'tts-lab': ttsLab }[name] || (() => {}))();
 }
 
 function goBack() {
@@ -227,6 +282,10 @@ function leaveGuard(from, to) {
     if (state.session) { state.session.status = 'INTERRUPTED'; state.session.updatedAt = now(); upsertSession(state.session); }
     state.choiceQueue = null;
   }
+  if (from === 'scaffold' && to !== 'scaffold' && to !== 'complete') {
+    if (!confirm('추가 읽기 활동을 중단할까요? 지금까지 기록은 남습니다.')) return false;
+    if (state.session?.supportExperiment) { state.session.supportExperiment.interruptedAt = now(); upsertSession(state.session); }
+  }
   if (from === 'mic') stopStream();
   return true;
 }
@@ -241,29 +300,101 @@ window.addEventListener('popstate', event => {
 });
 
 function bindCommon() {
+  $$('[data-app-version]').forEach(element => { element.textContent = window.ReadingPrototypeVersion.LABEL; });
   $$('[data-action="home"]', app).forEach(button => button.onclick = () => { if (leaveGuard(state.view, 'home')) { stopStream(); render('home'); } });
   $$('[data-action="back"]', app).forEach(button => button.onclick = () => goBack());
   $$('[data-action="new-session"]', app).forEach(button => button.onclick = () => { state.setupMode = { mode: 'full' }; render('setup'); });
   $$('[data-action="new-module"]', app).forEach(button => button.onclick = () => { state.setupMode = { mode: 'module', module: button.dataset.module }; render('setup'); });
   $$('[data-action="open-review"]', app).forEach(button => button.onclick = () => render('review'));
+  $$('[data-action="open-tts-lab"]', app).forEach(button => button.onclick = () => render('tts-lab'));
   $$('[data-action="open-results"]', app).forEach(button => button.onclick = () => render('result'));
   $$('[data-action="open-report"]', app).forEach(button => button.onclick = () => render('report'));
 }
 
 function home() {
   drawAsrState();
-  // 앱을 열자마자 음성인식 모델을 준비한다. 처음 한 번만 내려받고 이후에는 브라우저에 저장된 사본을 불러오므로,
-  // 참여자 정보를 입력하는 동안 준비가 끝나 검사 시작 시 기다리지 않는다.
-  preloadAsr();
+  // 음성인식은 연구자가 명시적으로 요청할 때만 받는다. 참여자 흐름과 CPU/GPU·네트워크 경쟁을 만들지 않는다.
   if ($('#preload-asr')) $('#preload-asr').onclick = () => preloadAsr();
   bindImport($('#import-session-home'));
-  $('#load-demo').onclick = () => {
+  if ($('#load-demo')) $('#load-demo').onclick = () => {
     const demo = buildDemoSession();
     upsertSession(demo);
     sessionStorage.setItem('readingResultSession', demo.id);
     sessionStorage.setItem('readingReviewSession', demo.id);
     render('report');
   };
+}
+
+function savedTtsPreference() {
+  try { return JSON.parse(localStorage.getItem('readingTtsPreference') || 'null'); }
+  catch { return null; }
+}
+
+function ttsLab() {
+  const select = $('#tts-voice-select');
+  const rate = $('#tts-rate');
+  const rateOutput = $('#tts-rate-output');
+  const status = $('#tts-lab-status');
+  const current = $('#tts-current');
+  const saved = savedTtsPreference();
+  let lastPreview = null;
+  const drawCurrent = () => {
+    const preference = savedTtsPreference();
+    current.innerHTML = preference ? `<b>현재 연구 후보:</b> ${esc(preference.name)} · 엔진 ${preference.rate}× · 실측 ${preference.measuredSpm || '–'} SPM · ${preference.validationStatus === 'PASS' ? '파일럿 범위 통과' : '추가 검증 필요'} · 자연스러움 ${preference.ratings?.naturalness || '–'}/5 · 명료도 ${preference.ratings?.clarity || '–'}/5` : '<b>아직 고정한 연구 후보가 없습니다.</b>';
+  };
+  const voices = () => {
+    const list = (speechSynthesis.getVoices() || []).filter(voice => /^ko(?:-|$)/i.test(voice.lang || ''));
+    const preferred = SPEC.selectKoreanVoice(list);
+    return preferred ? [preferred, ...list.filter(voice => voice !== preferred)] : list;
+  };
+  const drawVoices = () => {
+    const list = voices();
+    select.innerHTML = list.length ? list.map(voice => `<option value="${esc(voice.name)}">${esc(voice.name)} · ${esc(voice.lang)}${voice.localService ? ' · 로컬' : ' · 온라인'}${SPEC.TTS.preferredVoiceHints.some(hint => voice.name.toLowerCase().includes(hint)) ? ' · 고품질 후보' : ''}</option>`).join('') : '<option value="">한국어 음성을 찾지 못했습니다</option>';
+    if (saved?.name && list.some(voice => voice.name === saved.name)) select.value = saved.name;
+  };
+  drawVoices();
+  speechSynthesis.addEventListener?.('voiceschanged', drawVoices, { once: true });
+  rate.value = saved?.rate || SPEC.TTS.rate;
+  if (saved?.ratings) {
+    $('#tts-naturalness').value = saved.ratings.naturalness || '';
+    $('#tts-clarity').value = saved.ratings.clarity || '';
+    $('#tts-speed-fit').value = saved.ratings.speedFit || '';
+  }
+  rateOutput.textContent = `${Number(rate.value).toFixed(2)}×`;
+  rate.oninput = () => { rateOutput.textContent = `${Number(rate.value).toFixed(2)}×`; };
+  $('#tts-play').onclick = () => {
+    const voice = voices().find(candidate => candidate.name === select.value);
+    if (!voice) { status.textContent = '선택한 한국어 음성을 사용할 수 없습니다.'; return; }
+    speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance($('#tts-sample').value);
+    utterance.voice = voice; utterance.lang = 'ko-KR'; utterance.rate = Number(rate.value); utterance.pitch = 1; utterance.volume = 1;
+    const started = performance.now();
+    utterance.onstart = () => { status.textContent = '재생 중…'; };
+    utterance.onend = () => {
+      const duration = performance.now() - started;
+      const spm = SPEC.estimateSpm(utterance.text, duration);
+      const inRange = spm >= SPEC.TTS.targetSpm.min && spm <= SPEC.TTS.targetSpm.max;
+      lastPreview = { voiceName: voice.name, rate: Number(rate.value), durationMs: Math.round(duration), spm, wpm: SPEC.estimateWpm(utterance.text, duration), inRange };
+      status.textContent = `재생 완료 · ${lastPreview.wpm} WPM / ${spm} SPM · ${inRange ? '속도 후보 범위 안' : '속도 후보 범위 밖'}`;
+    };
+    utterance.onerror = event => { status.textContent = `재생 실패: ${event.error || 'TTS_ERROR'}`; };
+    speechSynthesis.speak(utterance);
+  };
+  $('#tts-save').onclick = () => {
+    const voice = voices().find(candidate => candidate.name === select.value);
+    if (!voice) { status.textContent = '먼저 사용할 수 있는 한국어 음성을 선택하세요.'; return; }
+    const ratings = { naturalness: numberOrNull($('#tts-naturalness').value), clarity: numberOrNull($('#tts-clarity').value), speedFit: numberOrNull($('#tts-speed-fit').value) };
+    if (!lastPreview || lastPreview.voiceName !== voice.name || lastPreview.rate !== Number(rate.value)) { status.textContent = '이 음성과 속도를 먼저 재생해 실제 SPM을 확인하세요.'; return; }
+    if (Object.values(ratings).some(value => value == null)) { status.textContent = '자연스러움·명료도·속도 적절성을 모두 평가하세요.'; return; }
+    const validationStatus = lastPreview.inRange && ratings.naturalness >= 4 && ratings.clarity >= 4 && ratings.speedFit >= 4 ? 'PASS' : 'REVIEW_REQUIRED';
+    const preference = { name: voice.name, lang: voice.lang, localService: Boolean(voice.localService), rate: Number(rate.value), measuredSpm: lastPreview.spm, measuredWpm: lastPreview.wpm, validationStatus,
+      ratings,
+      sample: $('#tts-sample').value, selectedAt: now(), appVersion: APP_VERSION };
+    localStorage.setItem('readingTtsPreference', JSON.stringify(preference));
+    status.textContent = validationStatus === 'PASS' ? '파일럿 후보로 저장했습니다. 다음 새 검사부터 우선 사용합니다.' : '후보 기록은 저장했지만 속도 또는 청취평가 기준을 통과하지 않아 자동 선택에는 쓰지 않습니다.';
+    drawCurrent();
+  };
+  drawCurrent();
 }
 
 // 두 가지 실시 방식
@@ -274,28 +405,122 @@ function setup() {
   if (setupMode.mode === 'module') {
     $('#setup-title').textContent = `${groupName(setupMode.module)} 검사를 준비합니다`;
     $('#setup-route-note').innerHTML = `선별 없이 <b>${esc(groupName(setupMode.module))}</b>${MODULE_GROUP[setupMode.module] ? ` (${MODULE_GROUP[setupMode.module].map(moduleName).join(' + ')})` : ''}만 실시하고, 끝나면 이 경로의 결과지를 봅니다.${isChoiceModule(setupMode.module) ? ' 녹음 없이 보기를 눌러 답하는 검사입니다.' : ''}`;
-    if (isChoiceModule(setupMode.module)) $('#setup-form button[type=submit]').textContent = '검사 시작';
+    if (isChoiceModule(setupMode.module)) $('#setup-form button[type=submit]').textContent = '검사 환경 확인으로 이동';
     $$('.stepper span').forEach((span, i) => { if (i === 1) span.textContent = isChoiceModule(setupMode.module) ? '검사' : '장치 점검'; });
     if (setupMode.module !== 'decoding') $('#random-order-row').classList.add('hidden');
+    if (setupMode.module !== 'comprehension') $('#support-experiment-row').classList.add('hidden');
+    if (setupMode.module !== 'fluency') $('#digital-reading-extension-row').classList.add('hidden');
+    if (setupMode.module !== 'language') $('#morphology-extension-row').classList.add('hidden');
+    if (setupMode.module !== 'comprehension') $('#advanced-comprehension-extension-row').classList.add('hidden');
   }
   $('#setup-form').onsubmit = event => {
     event.preventDefault();
     const form = new FormData(event.target);
     const moduleMode = setupMode.mode === 'module';
+    const extensionOptions = {
+      digitalReadingExtensionEnabled: form.get('digitalReadingExtension') === 'on',
+      morphologyExtensionEnabled: form.get('morphologyExtension') === 'on',
+      advancedComprehensionExtensionEnabled: form.get('advancedComprehensionExtension') === 'on'
+    };
+    const modulePath = MODULE_PATH[setupMode.module];
     // 전체 흐름이면 실시할 모듈과 경로는 선별 결과로 정한다 (screen → route).
     state.session = {
-      id: uid(), participant: form.get('participant').trim(), ageBand: form.get('ageBand'), mode: setupMode.mode, modules: moduleMode ? [...(MODULE_GROUP[setupMode.module] || [setupMode.module])] : [], orderPolicy: form.get('randomOrder') ? 'random' : 'fixed', previewPaths: [], length: form.get('length') || 'demo',
+      id: uid(), participant: form.get('participant').trim(), ageBand: form.get('ageBand'), mode: setupMode.mode, modules: moduleMode ? modulesForPaths([modulePath], extensionOptions) : [], orderPolicy: form.get('randomOrder') ? 'random' : 'fixed', previewPaths: [], length: form.get('length') || 'demo', supportExperimentEnabled: form.get('supportExperiment') === 'on', ...extensionOptions,
       createdAt: now(), updatedAt: now(), screening: {}, responses: [], status: 'CREATED',
       appVersion: APP_VERSION, formVersion: CONTENT_VERSION, policyVersion: POLICY_VERSION, ratingVersion: RATING_VERSION, pronunciationDictVersion: PRONUNCIATION_DICT_VERSION,
-      sttModelVersion: 'not-connected', schemaVersion: '0.4', assessmentSpecVersion: SPEC.VERSION,
+      sttModelVersion: 'not-connected', schemaVersion: '0.5', assessmentSpecVersion: SPEC.VERSION, extensionPolicyVersion: EXTENSION_POLICY_VERSION,
+      evidenceEngineVersion: EVIDENCE.VERSION, itemEvidenceVersion: ITEM_BANK.VERSION,
+      aItemBlueprint: A_BLUEPRINT_AUDIT,
       environment: SPEC.environmentSnapshot(window), presentationLog: [], ttsEvents: [],
+      performanceLog: { supported: false, longTasks: [], frameGaps: [] },
       deviceMetadata: { userAgent: navigator.userAgent, platform: navigator.platform || 'unknown', language: navigator.language }
     };
     upsertSession(state.session);
-    // 선택형 모듈만 실시하면 마이크가 필요 없다.
-    if (moduleMode && isChoiceModule(setupMode.module)) return startTasks(state.session);
-    render('mic');
+    render('preflight');
   };
+}
+
+// 화면마다 물리 크기가 달라지는 문제를 줄이기 위한 실시 전 점검.
+// 신용카드(ISO/IEC 7810 ID-1, 85.60mm)를 기준으로 사용자가 맞춘 CSS px/mm를 저장하고 자극 크기에 적용한다.
+function preflight() {
+  const session = state.session;
+  const size = $('#calibration-size');
+  const ruler = $('#calibration-ruler');
+  const output = $('#calibration-output');
+  const continueButton = $('#preflight-continue');
+  const distance = $('#distance-confirm');
+  const display = $('#display-confirm');
+  const environment = SPEC.environmentSnapshot(window);
+  const viewport = environment.viewport;
+  const ttsCoverage = TTS_ASSETS.coverage();
+  const selectedVoice = koreanVoice(session);
+  const ttsPreference = savedTtsPreference();
+  const choiceOnly = session.mode === 'module' && session.modules.every(isChoiceModule);
+  const checks = [
+    ['화면', `${viewport.width}×${viewport.height} CSS px · scale ${viewport.scale}`],
+    ['자극 글꼴', `${SPEC.VISUAL.intendedFont} 우선 · ${environment.visualSpec.intendedFontReady ? '준비됨' : '기기 대체 글꼴 사용 가능'}`],
+    ['글자 대비', `${SPEC.contrastRatio(SPEC.VISUAL.foreground, SPEC.VISUAL.background)}:1 · AA 목표 통과`],
+    ['조작 영역', `최소 ${SPEC.VISUAL.controlTargetCssPx}px`],
+    ['고정 음원', `${ttsCoverage.ready}개 · ${ttsCoverage.status}`]
+  ];
+  $('#preflight-checks').innerHTML = checks.map(([name, value]) => `<div class="preflight-check"><b>${esc(name)}</b>${esc(value)}</div>`).join('');
+  $('#tts-readiness').innerHTML = ttsCoverage.ready
+    ? `<b>고정 음원 준비:</b> ${ttsCoverage.ready}개를 미리 불러옵니다.`
+    : ttsPreference?.validationStatus === 'PASS' && selectedVoice ? `<b>파일럿 기준을 통과한 TTS 후보:</b> “${esc(selectedVoice.name)}” · 실측 ${ttsPreference.measuredSpm || '–'} SPM · 자연스러움 ${ttsPreference.ratings?.naturalness || '–'}/5 · 명료도 ${ttsPreference.ratings?.clarity || '–'}/5. 실제 사용 조건은 연구 기록에 저장됩니다.`
+      : `<b>TTS 청취 검증 필요:</b> 현재는 ${selectedVoice ? `고품질 우선 후보 “${esc(selectedVoice.name)}”` : '사용 가능한 한국어 음성'}을 사용합니다. 검사자·연구자 도구의 TTS 후보 검증에서 직접 듣고 고정할 수 있습니다.`;
+  TTS_ASSETS.preloadAll().then(result => { session.ttsAssetPreload = { ...result, checkedAt: now() }; upsertSession(session); });
+
+  const methodInputs = $$('[name=calibrationMethod]');
+  const method = () => methodInputs.find(input => input.checked)?.value || 'default';
+  const updateRuler = () => {
+    const selected = method();
+    const uncalibrated = selected === 'default';
+    const referenceMm = selected === 'ruler' ? SPEC.CALIBRATION.rulerWidthMm : SPEC.CALIBRATION.cardWidthMm;
+    $('#calibration-label').textContent = selected === 'ruler' ? '자에서 0–10 cm 길이' : '카드 긴 변 85.6 mm';
+    ruler.style.width = `${size.value}px`;
+    ruler.classList.toggle('hidden', uncalibrated);
+    size.classList.toggle('hidden', uncalibrated);
+    output.textContent = uncalibrated ? '브라우저 기본 크기로 진행합니다' : `${referenceMm} mm 기준 막대 조절`;
+    $('#calibration-note').textContent = selected === 'card' ? '카드 번호나 개인정보는 사용하지 않습니다. 카드의 바깥 길이만 비교합니다.' : selected === 'ruler' ? '자의 0 cm부터 10 cm까지를 막대에 맞춥니다.' : '기기마다 실제 글자 크기가 달라질 수 있으며, 이 상태를 연구 기록에 남깁니다.';
+  };
+  const updateButton = () => {
+    continueButton.disabled = !(distance.checked && display.checked);
+    continueButton.textContent = '환경 확인 완료';
+  };
+  size.oninput = updateRuler;
+  methodInputs.forEach(input => input.onchange = updateRuler);
+  distance.onchange = display.onchange = updateButton;
+  updateRuler();
+  updateButton();
+  $('#asr-state').textContent = choiceOnly ? '이 경로는 음성인식이 필요하지 않습니다.' : '음성인식 모델은 검사 중에 받지 않습니다. 검사 뒤 연구자 자동 분석에서만 준비합니다.';
+  continueButton.onclick = async () => {
+    continueButton.disabled = true;
+    continueButton.textContent = '글꼴과 자산 확인 중…';
+    try { await document.fonts?.load?.(`16px "${SPEC.VISUAL.intendedFont}"`); await document.fonts?.ready; } catch {}
+    const calibration = method() === 'default' ? SPEC.defaultCalibration() : SPEC.calibrationFromReference(size.value, method());
+    SPEC.applyVisualTokens(document.documentElement, calibration?.cssPxPerMm);
+    session.environment = { ...SPEC.environmentSnapshot(window), calibration, viewingDistanceCm: 50, viewingDistanceConfirmed: true,
+      displayScaleConfirmed: true, visionStatus: $('#vision-status').value, audioOutput: $('#audio-output').value,
+      ttsAssetCoverage: ttsCoverage, preflightCompletedAt: now() };
+    session.updatedAt = now();
+    upsertSession(session);
+    beginPerformanceMonitoring(session);
+    if (choiceOnly) startTasks(session); else render('mic');
+  };
+}
+
+function beginPerformanceMonitoring(session) {
+  if (state.performanceObserver) state.performanceObserver.disconnect();
+  session.performanceLog ||= { supported: false, longTasks: [], frameGaps: [] };
+  if (!window.PerformanceObserver?.supportedEntryTypes?.includes('longtask')) return;
+  session.performanceLog.supported = true;
+  state.performanceObserver = new PerformanceObserver(list => {
+    for (const entry of list.getEntries()) {
+      session.performanceLog.longTasks.push({ atMs: Math.round(entry.startTime), durationMs: Math.round(entry.duration) });
+      if (session.performanceLog.longTasks.length > 100) session.performanceLog.longTasks.shift();
+    }
+  });
+  state.performanceObserver.observe({ type: 'longtask', buffered: true });
 }
 
 async function getMic() {
@@ -311,6 +536,9 @@ function stopStream() {
   state.stream = null;
   if (state.timer) clearInterval(state.timer);
   state.timer = null;
+  if (state.recordingDeadlineTimer) clearTimeout(state.recordingDeadlineTimer);
+  state.recordingDeadlineTimer = null;
+  if (state.presentationAuditCleanup) state.presentationAuditCleanup();
 }
 
 async function analyzeAudio(blob) {
@@ -345,6 +573,7 @@ async function analyzeAudio(blob) {
 
 function mic() {
   let context, analyser, animation;
+  let lastMeterAt = 0;
   const status = $('#mic-status');
   const button = $('#check-mic');
   button.onclick = async () => {
@@ -356,14 +585,17 @@ function mic() {
       context ||= new AudioContext();
       const source = context.createMediaStreamSource(stream);
       analyser = context.createAnalyser();
-      analyser.fftSize = 256;
+      analyser.fftSize = 64;
       source.connect(analyser);
       const meterData = new Uint8Array(analyser.frequencyBinCount);
       $('#mic-orb').classList.add('listening');
-      const draw = () => {
-        analyser.getByteFrequencyData(meterData);
-        const average = meterData.reduce((a, b) => a + b, 0) / meterData.length;
-        $('#meter-fill').style.width = `${Math.min(100, average * 1.8)}%`;
+      const draw = timestamp => {
+        if (timestamp - lastMeterAt >= 50) {
+          analyser.getByteFrequencyData(meterData);
+          const average = meterData.reduce((a, b) => a + b, 0) / meterData.length;
+          $('#meter-fill').style.width = `${Math.min(100, average * 1.8)}%`;
+          lastMeterAt = timestamp;
+        }
         animation = requestAnimationFrame(draw);
       };
       draw();
@@ -383,13 +615,12 @@ function mic() {
       status.innerHTML = blocking
         ? `<b>다시 점검해 주세요.</b> ${esc(quality.flags.join(', '))}`
         : `<b>점검 완료.</b> ${esc(quality.flags.join(', '))} · ${quality.sampleRate || '확인 불가'} Hz`;
-      if (!blocking) { $('#continue-screening').classList.remove('hidden'); preloadAsr(); }
+      if (!blocking) $('#continue-screening').classList.remove('hidden');
       button.textContent = blocking ? '마이크 다시 확인' : '다시 점검';
     } catch (error) {
       status.textContent = `마이크 점검을 완료하지 못했습니다. ${error.message || '권한을 확인해 주세요.'}`;
     } finally { button.disabled = false; }
   };
-  drawAsrState();
   const moduleMode = state.session?.mode === 'module';
   if (moduleMode) $('#continue-screening').textContent = `${moduleName(state.session.modules[0])} 검사 시작`;
   $('#continue-screening').onclick = () => {
@@ -500,7 +731,7 @@ function screen() {
     }
     const decision = S.screeningDecision({ ...result, ageBand: session.ageBand });
     session.screening = { ...result, finishedAt: now(), contentVersion: 'screening-form-0.3', scoring: S.AUTO_SCORING_VERSION, sttModel: clips[0]?.asr?.modelLabel || clips[0]?.asr?.model, decision };
-    session.modules = modulesForPaths(decision.paths);
+    session.modules = modulesForPaths(decision.paths, session);
     session.previewPaths = [...decision.paths];
     session.updatedAt = now();
     upsertSession(session);
@@ -554,7 +785,7 @@ function screeningSummaryHtml(screening) {
   const focus = d.focus || [];
   return `<div class="table-wrap"><table class="item-table"><thead><tr><th>선별 축</th><th>측정값</th><th>임시 기준</th><th>결과</th></tr></thead><tbody>
     <tr><td>기초 해독 · 단어 ${m.wordN}개</td><td>${m.wordHit}/${m.wordN} 정확 · 실제 ${cell(c.real)} · 비단어 ${cell(c.nonword)} · 표기 일치 ${cell(c.consistent)} · 음운변동 ${cell(c.phonological)}</td><td class="quiet">하나라도 오류 → A 단어 해독</td><td>${tag(d.flags.A)}</td></tr>
-    <tr><td>유창성 · 문장 낭독</td><td>${m.sentenceAccuracy != null ? `어절 정확도 ${m.sentenceAccuracy}% · 분당 정확 음절 ${m.sentenceRate}` : '–'}</td><td class="quiet">정확도 ${S.SCREENING_CONFIG.sentenceMinAccuracy}% 미만 → A·B · 속도 ${m.rateFloor} 미만(${esc(d.ageBand)}) → B</td><td>${tag(d.flags.B)}</td></tr>
+    <tr><td>유창성 · 문장 낭독</td><td>${m.sentenceAccuracy != null ? `어절 정확도 ${m.sentenceAccuracy}% · 분당 정확 음절 ${m.sentenceRate}` : '–'}</td><td class="quiet">정확도 ${S.SCREENING_CONFIG.sentenceMinAccuracy}% 미만 → A·B · 속도는 연령 규준 전이라 자동 분기에 사용하지 않음</td><td>${tag(d.flags.B)}</td></tr>
   </tbody></table></div>
   <div class="focus-list"><h4>세부검사에서 중점 확인할 것</h4>${focus.length ? `<ul>${focus.map(f => `<li><span class="tag ${f.module === 'decoding' ? 'core' : 'preview'}">${f.module === 'decoding' ? 'A 단어 해독' : 'B 유창성'}</span> <b>${esc(f.label)}</b> <span class="quiet">— 선별 신호: ${esc(f.reason)} · 세부검사에서 볼 것: ${esc(f.check)}</span></li>`).join('')}</ul>` : '<p class="quiet">선별에서 추가 확인 신호가 없습니다. 필요하면 아래 경로를 직접 켜서 세부검사를 실시할 수 있습니다.</p>'}</div>`;
 }
@@ -572,7 +803,10 @@ function route() {
       const on = chosen.has(path.id);
       const reasons = decision?.flags?.[path.id] || [];
       const subtests = path.subtests.map(subtest => {
-        const tag = !on ? '<span class="tag off">건너뜀</span>' : subtest.status === 'core' ? '<span class="tag core">실시·채점</span>' : '<span class="tag preview">화면 미리보기</span>';
+        const tag = !on ? '<span class="tag off">건너뜀</span>'
+          : subtest.status === 'core' ? '<span class="tag core">핵심 후보 · 실시</span>'
+            : subtest.status === 'research' ? (extensionEnabledForSubtest(session, subtest) ? '<span class="tag preview">연구 확장 · 별도 채점</span>' : '<span class="tag off">연구 확장 · 선택 안 함</span>')
+              : '<span class="tag preview">화면 미리보기</span>';
         return `<li class="${on ? '' : 'dim'}"><span>${esc(subtest.title)}</span>${tag}</li>`;
       }).join('');
       return `<article class="path-card path-${path.id} ${on ? 'on' : 'off'}"><label class="path-toggle"><input type="checkbox" name="routePath" value="${path.id}" ${on ? 'checked' : ''}> 경로 ${path.id}${recommended.has(path.id) ? ' · <b>선별 추천</b>' : ''}</label><h3>${esc(path.title)}</h3><p class="quiet">${reasons.length ? esc(reasons.join(' / ')) : ['C', 'D'].includes(path.id) ? '이번 선별은 해독·유창성 두 축만 봅니다. 언어·글 이해를 보려면 켜서 실시하세요' : '선별에서 추가 확인 신호 없음'}</p><ul>${subtests}</ul></article>`;
@@ -589,7 +823,7 @@ function route() {
     // 검사자 조정은 추천과 다른 경로만 기록한다.
     session.routing = { recommended: [...recommended], final: chosen,
       added: chosen.filter(id => !recommended.has(id)), removed: [...recommended].filter(id => !chosen.includes(id)), decidedAt: now() };
-    session.modules = modulesForPaths(chosen);
+    session.modules = modulesForPaths(chosen, session);
     session.previewPaths = chosen;
     upsertSession(session);
     startTasks(session);
@@ -597,20 +831,31 @@ function route() {
 }
 
 function startTasks(session) {
+  if (!state.performanceObserver) beginPerformanceMonitoring(session);
+  TTS_ASSETS.preloadAll().then(result => { session.ttsAssetPreload = { ...result, checkedAt: now() }; upsertSession(session); });
   const modules = session.modules;
   state.taskQueue = [];
   // 연습은 항상 먼저. 본검사 순서는 설정에 따라 고정 또는 무작위이며, 실제 제시 순서를 세션에 저장한다.
   const mainItems = [...itemSet(session, 'decoding')];
-  if (session.orderPolicy === 'random') for (let i = mainItems.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [mainItems[i], mainItems[j]] = [mainItems[j], mainItems[i]]; }
-  if (modules.includes('decoding')) state.taskQueue.push(...[...stimuli.decodingPractice, ...mainItems].map(item => ({ ...item, module: 'decoding' })));
-  if (modules.includes('fluency')) state.taskQueue.push(...[...stimuli.fluencyPractice, ...itemSet(session, 'fluency')].map(item => ({ ...item, module: 'fluency' })));
+  const fluencyItems = itemSet(session, 'fluency');
+  const timedWordForm = fluencyItems.find(item => item.taskType === 'timed-word-list');
+  if (timedWordForm) session.wordEfficiencyForm = { formId: timedWordForm.formId, evidenceVersion: ITEM_BANK.VERSION, audit: EVIDENCE.timedWordFormAudit(timedWordForm) };
+  session.randomizationSeed ||= `${session.participant}|${session.createdAt}|${CONTENT_VERSION}`;
+  if (session.orderPolicy === 'random') {
+    const random = seededRandom(session.randomizationSeed);
+    for (let i = mainItems.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [mainItems[i], mainItems[j]] = [mainItems[j], mainItems[i]]; }
+  }
+  if (modules.includes('decoding')) state.taskQueue.push(...stimuli.decodingPractice.map(item => ({ ...item, module: 'decoding' })), { id: 'decoding-ready', module: 'decoding', ready: true }, ...mainItems.map(item => ({ ...item, module: 'decoding' })));
+  if (modules.includes('fluency')) state.taskQueue.push(...stimuli.fluencyPractice.map(item => ({ ...item, module: 'fluency' })), { id: 'fluency-ready', module: 'fluency', ready: true }, ...fluencyItems.map(item => ({ ...item, module: 'fluency' })));
   state.taskIndex = 0;
-  session.presentationOrder = state.taskQueue.map(item => item.id);
+  session.presentationOrder = state.taskQueue.filter(item => !item.ready).map(item => item.id);
   session.status = 'IN_PROGRESS';
   session.startedAt = now();
   session.batteryVersion = BATTERY_VERSION;
   session.assessmentSpecVersion = SPEC.VERSION;
-  session.environment = SPEC.environmentSnapshot(window);
+  session.evidenceEngineVersion = EVIDENCE.VERSION;
+  session.itemEvidenceVersion = ITEM_BANK.VERSION;
+  session.environment = { ...SPEC.environmentSnapshot(window), ...(session.environment || {}) };
   upsertSession(session);
   // 녹음 과제를 먼저 하고, 선택형 과제는 이어서 한다.
   if (state.taskQueue.length) render('task'); else startChoice(session);
@@ -620,7 +865,10 @@ function startTasks(session) {
 // 화면(필요하면 합성 음성)으로 문항을 제시하고, 보기를 누르는 즉시 정오·반응 시간을 저장한다.
 function choiceSections(session, module) {
   return CHOICE_MODULES[module].sections
-    .map(section => ({ ...section, items: section.items.filter(item => session?.length === 'full' || item.demo) }))
+    .filter(section => section.id !== 'C-morph' || session?.morphologyExtensionEnabled)
+    .map(section => ({ ...section, items: section.items
+      .filter(item => session?.length === 'full' || item.demo)
+      .filter(item => !['D-eval', 'D-multi'].includes(item.subtest) || session?.advancedComprehensionExtensionEnabled) }))
     .filter(section => section.items.length);
 }
 
@@ -629,6 +877,7 @@ function buildChoiceQueue(session) {
   for (const module of session.modules.filter(isChoiceModule)) for (const section of choiceSections(session, module)) {
     queue.push({ kind: 'intro', module, section });
     for (const item of section.practice || []) queue.push({ kind: 'item', module, section, item, practice: true });
+    if ((section.practice || []).length) queue.push({ kind: 'ready', module, section });
     for (const item of section.items) queue.push({ kind: 'item', module, section, item });
   }
   return queue;
@@ -643,12 +892,31 @@ function prepareChoiceStep(index) {
   const options = !item ? null : step.section.format === 'binary'
     ? step.section.binary.map(choice => ({ value: choice.value, label: choice.label, key: choice.key }))
     : fixedOptionOrder(item).map((option, i) => ({ value: option, label: option, key: String(i + 1) }));
+  let nodeTemplate = null;
+  if (item) {
+    const section = step.section;
+    const passage = section.passage && !section.listenOnly ? `<div class="choice-passage">${esc(section.passage).replace(/\n/g, '<br>')}</div>` : '';
+    const stimulus = section.format === 'binary' ? `<div class="stimulus ${section.id === 'B-lexical' ? 'word' : 'sentence'}">${esc(item.text)}</div>` : `<p class="choice-stem">${esc(item.stem)}</p>`;
+    const listen = section.listenOnly ? '<button class="secondary" id="listen-again" type="button">🔊 이야기 다시 듣기 <span id="listen-left"></span></button>' : '';
+    nodeTemplate = document.createElement('template');
+    nodeTemplate.innerHTML = `${step.practice ? '<div class="practice-banner"><b>연습</b><span>점수에 포함되지 않습니다. 답을 고르면 정답을 알려 드려요.</span></div>' : ''}
+      ${passage}${listen}${stimulus}
+      ${item.audio ? '<div class="sound-check"><button class="secondary" id="replay" type="button">🔊 다시 듣기</button></div>' : ''}
+      <div class="choice-options ${section.format === 'binary' ? 'binary' : ''}">${options.map(option => `<button class="choice-option" type="button" data-value="${esc(option.value)}"><kbd>${esc(option.key)}</kbd>${esc(option.label)}</button>`).join('')}</div>
+      <p id="choice-feedback" class="notice hidden"></p>`;
+  }
   state.preparedChoices[index] = {
     index, kind: step.kind, itemId: item?.id || null, sectionId: step.section?.id || null,
     preparedAt: now(), preparedPerfMs: performance.now(),
     passage: step.section?.passage ? String(step.section.passage) : '',
-    options, assets: ['local-text', 'fixed-option-order']
+    options, nodeTemplate, assets: ['local-text', 'fixed-option-order', ...(nodeTemplate ? ['detached-dom-template'] : [])]
   };
+}
+
+function queueChoicePreparation(index) {
+  const prepare = () => { prepareChoiceStep(index); prepareChoiceStep(index + 1); };
+  if (window.requestIdleCallback) window.requestIdleCallback(prepare, { timeout: 250 });
+  else setTimeout(prepare, 0);
 }
 
 function startChoice(session) {
@@ -659,17 +927,25 @@ function startChoice(session) {
   state.preparedChoices = {};
   session.choiceAnswers ||= [];
   session.choiceSections ||= {};
-  if (!state.choiceQueue.length) return finishAssessment(session);
+  if (!state.choiceQueue.length) return finishChoiceSequence(session);
   prepareChoiceStep(0);
+  queueChoicePreparation(1);
   render('choice');
+}
+
+function finishChoiceSequence(session) {
+  if (session.supportExperimentEnabled && session.modules.includes('comprehension') && !session.supportExperiment?.completedAt) return startSupportExperiment(session);
+  return finishAssessment(session);
 }
 
 function finishAssessment(session) {
   stopStream();
+  if (state.performanceObserver) { state.performanceObserver.disconnect(); state.performanceObserver = null; }
+  if (session.performanceLog) session.performanceLog.presentationEndedAt = now();
   state.taskQueue = [];
   state.choiceQueue = null;
   const needsAsr = scoredResponses(session).some(response => response.audioKey && !response.autoRating);
-  session.status = needsAsr ? 'ANALYZING' : 'SCORED';
+  session.status = needsAsr ? 'REVIEW_PENDING' : 'SCORED';
   if (!needsAsr) session.scoredAt = now();
   session.submittedAt = now();
   sessionStorage.setItem('readingResultSession', session.id);
@@ -681,17 +957,21 @@ function finishAssessment(session) {
 // 브라우저 내장 음성 합성(ko-KR)은 아직 잠정 제시 수단이다. 한 세션 안에서는 음성을 고정하고,
 // 실제 사용 음성·재생시간·추정 WPM·실패를 모두 저장해 기기 차이가 숨지 않게 한다.
 function koreanVoice(session = state.session) {
-  const pinnedName = session?.ttsProfile?.voice?.name;
-  return SPEC.selectKoreanVoice(
-    window.speechSynthesis?.getVoices() || [],
-    pinnedName && pinnedName !== 'unavailable' ? pinnedName : ''
-  );
+  const preference = savedTtsPreference();
+  const voices = window.speechSynthesis?.getVoices() || [];
+  const sessionPinned = session?.ttsProfile?.voice?.name;
+  if (sessionPinned && sessionPinned !== 'unavailable') return SPEC.selectKoreanVoice(voices, sessionPinned);
+  return (preference?.validationStatus === 'PASS' && preference?.name ? SPEC.selectKoreanVoice(voices, preference.name) : null) || SPEC.selectKoreanVoice(voices);
 }
 function ensureTtsProfile(session = state.session) {
   if (!session) return null;
   const voice = koreanVoice(session);
   const snapshot = SPEC.voiceSnapshot(voice);
-  session.ttsProfile ||= { engine: SPEC.TTS.engine, status: SPEC.TTS.status, language: SPEC.TTS.language, rate: SPEC.TTS.rate, pitch: SPEC.TTS.pitch, volume: SPEC.TTS.volume, voice: snapshot, selectedAt: now() };
+  const preference = savedTtsPreference();
+  const acceptedPreference = preference?.validationStatus === 'PASS' && preference?.name === snapshot.name;
+  const selectedRate = acceptedPreference ? Number(preference.rate) : SPEC.TTS.rate;
+  session.ttsProfile ||= { engine: SPEC.TTS.engine, status: acceptedPreference ? 'RESEARCHER_VALIDATED_DEVICE_VOICE' : 'AUTO_SELECTED_PROVISIONAL_DEVICE_VOICE', language: SPEC.TTS.language, rate: selectedRate, pitch: SPEC.TTS.pitch, volume: SPEC.TTS.volume, voice: snapshot,
+    candidateEvaluation: acceptedPreference ? { ...preference.ratings, measuredSpm: preference.measuredSpm, validationStatus: preference.validationStatus } : null, selectedAt: now() };
   // 브라우저가 비동기로 음성 목록을 채웠다면 unavailable 상태만 한 번 갱신한다.
   if (session.ttsProfile.voice?.name === 'unavailable' && voice) session.ttsProfile = { ...session.ttsProfile, voice: snapshot, selectedAt: now() };
   return { profile: session.ttsProfile, voice };
@@ -709,7 +989,7 @@ async function speak(text, context = {}) {
   const started = performance.now();
   const finish = (ok, extra = {}) => {
     const durationMs = Math.round(performance.now() - started);
-    return recordTtsEvent({ ok, startedAt, endedAt: now(), durationMs, wpm: ok ? SPEC.estimateWpm(text, durationMs) : null,
+    return recordTtsEvent({ ok, startedAt, endedAt: now(), durationMs, wpm: ok ? SPEC.estimateWpm(text, durationMs) : null, spm: ok ? SPEC.estimateSpm(text, durationMs) : null,
       textLength: String(text || '').length, context, ...extra });
   };
   if (window.ReadingTtsOverride) {
@@ -718,15 +998,25 @@ async function speak(text, context = {}) {
       return finish(result !== false, { engine: 'test-override', voice: { name: 'override', lang: 'ko-KR' } });
     } catch (error) { return finish(false, { engine: 'test-override', error: String(error?.message || error) }); }
   }
+  const fixedAsset = TTS_ASSETS.resolve(context);
+  if (fixedAsset) {
+    try {
+      const result = await TTS_ASSETS.play(fixedAsset);
+      return finish(result.ok, { engine: 'fixed-audio', standardized: true, assetVersion: TTS_ASSETS.VERSION,
+        assetKey: TTS_ASSETS.keyOf(context), provider: fixedAsset.provider || 'recorded', ...(result.error ? { error: result.error } : {}) });
+    } catch (error) {
+      return finish(false, { engine: 'fixed-audio', standardized: true, assetVersion: TTS_ASSETS.VERSION, error: String(error?.message || error) });
+    }
+  }
   const synth = window.speechSynthesis;
-  if (!synth || !text) return finish(false, { engine: SPEC.TTS.engine, error: !text ? 'EMPTY_TEXT' : 'TTS_UNAVAILABLE' });
+  if (!synth || !text) return finish(false, { engine: 'browser-speech-synthesis', standardized: false, error: !text ? 'EMPTY_TEXT' : 'TTS_UNAVAILABLE' });
   const selected = ensureTtsProfile();
-  if (!selected?.voice) return finish(false, { engine: SPEC.TTS.engine, voice: selected?.profile?.voice, error: 'KOREAN_VOICE_UNAVAILABLE' });
+  if (!selected?.voice) return finish(false, { engine: 'browser-speech-synthesis', standardized: false, voice: selected?.profile?.voice, error: 'KOREAN_VOICE_UNAVAILABLE' });
   return new Promise(resolve => {
     synth.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = SPEC.TTS.language;
-    utterance.rate = SPEC.TTS.rate;
+    utterance.rate = selected.profile.rate;
     utterance.pitch = SPEC.TTS.pitch;
     utterance.volume = SPEC.TTS.volume;
     utterance.voice = selected.voice;
@@ -735,7 +1025,7 @@ async function speak(text, context = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(guard);
-      resolve(finish(ok, { engine: SPEC.TTS.engine, voice: selected.profile.voice, rate: SPEC.TTS.rate, ...(error ? { error } : {}) }));
+      resolve(finish(ok, { engine: 'browser-speech-synthesis', standardized: false, voice: selected.profile.voice, rate: selected.profile.rate, ...(error ? { error } : {}) }));
     };
     const guard = setTimeout(() => { synth.cancel(); complete(false, 'TTS_TIMEOUT'); }, SPEC.TTS.timeoutBaseMs + text.length * SPEC.TTS.timeoutPerCharacterMs);
     utterance.onend = () => complete(true);
@@ -772,16 +1062,22 @@ function choice() {
       } else break;
     }
     upsertSession(session);
-    if (state.choiceIndex >= state.choiceQueue.length) return finishAssessment(session);
+    if (state.choiceIndex >= state.choiceQueue.length) return finishChoiceSequence(session);
     render('choice', { history: 'replace' });
   };
+
+  if (step.kind === 'ready') {
+    stage.innerHTML = `<div class="ready-panel"><p class="eyebrow">연습 끝</p><h1>${esc(section.title)} 본검사를 시작합니다</h1><p>이제부터는 정답을 알려 드리지 않습니다. 첫 문제는 시작을 누른 뒤에 나타납니다.</p><div class="button-row center"><button class="primary" id="choice-main-start" type="button">본검사 시작</button></div></div>`;
+    $('#choice-main-start').onclick = advance;
+    return;
+  }
 
   if (step.kind === 'intro') {
     const practiceCount = (section.practice || []).length;
     stage.innerHTML = `<p class="eyebrow">${esc(CHOICE_SUBTEST_TITLES[section.subtest] || section.title)}</p>
       <p class="choice-instruction">${esc(section.instruction)}</p>
       <ul class="choice-facts"><li>문항 ${mainItems.length}개${practiceCount ? ` · 먼저 연습 ${practiceCount}개 (점수 제외)` : ''}</li>${limit ? `<li>제한 시간 <b>${limit}초</b> (연습이 끝나면 시작)</li>` : '<li>시간 제한 없음 · 반응 시간은 기록됩니다</li>'}${section.itemTimeoutMs ? `<li>한 문항에 ${section.itemTimeoutMs / 1000}초가 지나면 다음으로 넘어갑니다</li>` : ''}${section.exposureMs ? `<li>글자는 <b>${section.exposureMs / 1000}초</b>만 보였다가 사라집니다. 사라진 뒤에 눌러도 됩니다</li>` : ''}${section.format === 'binary' ? `<li>키보드: <b>${esc(section.binary[0].key)}</b> = ${esc(section.binary[0].label)}, <b>${esc(section.binary[1].key)}</b> = ${esc(section.binary[1].label)}</li>` : '<li>키보드 숫자 1~4로도 고를 수 있어요</li>'}</ul>
-      <div class="sound-check"><button class="secondary" id="instruction-audio" type="button">🔊 안내 듣기</button>${section.audio ? '<button class="secondary" id="sound-test" type="button">🔊 소리 확인</button>' : ''}<span id="voice-status" class="quiet"></span></div>
+      <div class="sound-check"><button class="secondary" id="instruction-audio" type="button">🔊 안내 듣기</button>${section.audio ? '<button class="secondary" id="sound-test" type="button">🔊 소리 확인</button>' : ''}<button class="text-button" id="additional-explanation" type="button">검사자 추가 설명 기록</button><span id="voice-status" class="quiet"></span></div>
       <div class="button-row center"><button class="primary" id="choice-start" type="button">시작</button></div>`;
     const sectionLog = session.choiceSections[section.id] ||= { module, instructionPlays: 0, instructionFailures: 0, audioFailures: 0 };
     const status = () => {
@@ -799,12 +1095,19 @@ function choice() {
       status();
     };
     if ($('#sound-test')) $('#sound-test').onclick = () => speak('소리가 잘 들리면 시작을 눌러 주세요.', { kind: 'sound-check', module, sectionId: section.id });
+    $('#additional-explanation').onclick = () => {
+      sectionLog.additionalExplanations = (sectionLog.additionalExplanations || 0) + 1;
+      sectionLog.lastAdditionalExplanationAt = now();
+      $('#additional-explanation').textContent = `추가 설명 기록됨 (${sectionLog.additionalExplanations}회)`;
+      upsertSession(session);
+    };
     $('#choice-start').onclick = () => {
       const selected = ensureTtsProfile(session);
-      session.choiceSections[section.id] = { ...sectionLog, module, startedAt: now(), timeLimitSec: limit, items: mainItems.length, voice: selected?.profile?.voice || null, specVersion: SPEC.VERSION };
+      session.choiceSections[section.id] = { ...sectionLog, module, startedAt: now(), timeLimitSec: limit, items: mainItems.length, voice: selected?.profile?.voice || null,
+        evidenceAudit: section.evidenceAudit || null, evidenceVersion: EVIDENCE.VERSION, specVersion: SPEC.VERSION };
       advance();
     };
-    prepareChoiceStep(state.choiceIndex + 1);
+    queueChoicePreparation(state.choiceIndex + 1);
     return;
   }
 
@@ -823,15 +1126,19 @@ function choice() {
 
   const item = step.item;
   const options = prepared?.options || (section.format === 'binary' ? section.binary.map(choice => ({ value: choice.value, label: choice.label, key: choice.key })) : fixedOptionOrder(item).map((option, i) => ({ value: option, label: option, key: String(i + 1) })));
-  const passageText = prepared?.passage || section.passage;
-  const passage = passageText && !section.listenOnly ? `<div class="choice-passage">${esc(passageText).replace(/\n/g, '<br>')}</div>` : '';
-  const stimulus = section.format === 'binary' ? `<div class="stimulus ${section.id === 'B-lexical' ? 'word' : 'sentence'}">${esc(item.text)}</div>` : `<p class="choice-stem">${esc(item.stem)}</p>`;
-  const listen = section.listenOnly ? `<button class="secondary" id="listen-again" type="button">🔊 이야기 다시 듣기 <span id="listen-left"></span></button>` : '';
-  stage.innerHTML = `${step.practice ? '<div class="practice-banner"><b>연습</b><span>점수에 포함되지 않습니다. 답을 고르면 정답을 알려 드려요.</span></div>' : ''}
-    ${passage}${listen}${stimulus}
-    ${item.audio ? '<div class="sound-check"><button class="secondary" id="replay" type="button">🔊 다시 듣기</button></div>' : ''}
-    <div class="choice-options ${section.format === 'binary' ? 'binary' : ''}">${options.map(option => `<button class="choice-option" type="button" data-value="${esc(option.value)}"><kbd>${esc(option.key)}</kbd>${esc(option.label)}</button>`).join('')}</div>
-    <p id="choice-feedback" class="notice hidden"></p>`;
+  if (prepared?.nodeTemplate) {
+    stage.replaceChildren(prepared.nodeTemplate.content.cloneNode(true));
+    stage.classList.add('buffered-stage');
+  } else {
+    const passage = section.passage && !section.listenOnly ? `<div class="choice-passage">${esc(section.passage).replace(/\n/g, '<br>')}</div>` : '';
+    const stimulus = section.format === 'binary' ? `<div class="stimulus ${section.id === 'B-lexical' ? 'word' : 'sentence'}">${esc(item.text)}</div>` : `<p class="choice-stem">${esc(item.stem)}</p>`;
+    const listen = section.listenOnly ? '<button class="secondary" id="listen-again" type="button">🔊 이야기 다시 듣기 <span id="listen-left"></span></button>' : '';
+    stage.innerHTML = `${step.practice ? '<div class="practice-banner"><b>연습</b><span>점수에 포함되지 않습니다. 답을 고르면 정답을 알려 드려요.</span></div>' : ''}
+      ${passage}${listen}${stimulus}
+      ${item.audio ? '<div class="sound-check"><button class="secondary" id="replay" type="button">🔊 다시 듣기</button></div>' : ''}
+      <div class="choice-options ${section.format === 'binary' ? 'binary' : ''}">${options.map(option => `<button class="choice-option" type="button" data-value="${esc(option.value)}"><kbd>${esc(option.key)}</kbd>${esc(option.label)}</button>`).join('')}</div>
+      <p id="choice-feedback" class="notice hidden"></p>`;
+  }
 
   let shownAt = performance.now();
   let replays = 0;
@@ -852,6 +1159,7 @@ function choice() {
     finishExposure('response');
     const rawCorrect = !noResponse && value === item.answer;
     const rtMs = noResponse ? null : Math.round(performance.now() - shownAt);
+    const responseQuality = section.id === 'B-lexical' ? EVIDENCE.rapidResponseAudit(rtMs) : { status: 'NOT_APPLICABLE', valid: true };
     $$('.choice-option').forEach(button => { button.disabled = true; if (button.dataset.value === value) button.classList.add('chosen'); });
     if (step.practice) {
       const right = section.format === 'binary' ? section.binary.find(choice => choice.value === item.answer).label : item.answer;
@@ -865,31 +1173,36 @@ function choice() {
     session.presentationLog ||= [];
     session.presentationLog.push({ itemId: item.id, sectionId: section.id, module, ...presentation, recordedAt: now() });
     session.choiceAnswers.push({ module, sectionId: section.id, subtest: item.subtest || section.subtest, itemId: item.id, type: item.type, response: value, answer: item.answer,
-      correct: rawCorrect, rawCorrect, rtMs, noResponse, replays, presentedAt, battery: BATTERY_VERSION, scoringStatus, presentation, specVersion: SPEC.VERSION });
+      correct: rawCorrect, rawCorrect, rtMs, noResponse, replays, presentedAt, battery: BATTERY_VERSION, scoringStatus, presentation, responseQuality,
+      focusAtResponse: document.hasFocus(), visibilityAtResponse: document.visibilityState, itemEvidenceAudit: item.evidenceAudit || null, evidenceVersion: EVIDENCE.VERSION, specVersion: SPEC.VERSION });
     session.updatedAt = now();
     advance();
   };
   $$('.choice-option').forEach(button => button.onclick = () => answer(button.dataset.value));
   document.onkeydown = event => {
     const option = options.find(choice => choice.key.toLowerCase() === event.key.toLowerCase());
-    if (option && !$$('.choice-option').every(button => button.disabled)) { event.preventDefault(); answer(option.value); }
+    if (option && !event.repeat && !$$('.choice-option').every(button => button.disabled)) { event.preventDefault(); event.stopPropagation(); answer(option.value); }
   };
   if (section.itemTimeoutMs) state.choiceTimeout = setTimeout(() => answer(null, { noResponse: true }), section.itemTimeoutMs);
   // 첫 paint 경계에서 고해상도 시계를 시작하고 실제 마스킹 시각을 저장한다.
   // 메인 스레드가 막혀 허용 오차보다 오래 보인 문항은 PRESENTATION_INVALID로 남겨 점수에서 제외한다.
   if (section.exposureMs) {
     setOptionsDisabled(true);
-    requestAnimationFrame(paintedAt => {
+    requestAnimationFrame(warmFrameAt => requestAnimationFrame(paintedAt => {
       if (answered) return;
+      const warmupFrameGapMs = Math.round(paintedAt - warmFrameAt);
       shownAt = paintedAt;
       presentation.renderedAt = now();
       presentation.renderedPerfMs = Math.round(paintedAt);
+      presentation.warmupFrameGapMs = warmupFrameGapMs;
+      presentation.longTaskCountAtShow = session.performanceLog?.longTasks?.length || 0;
+      session.performanceLog?.frameGaps?.push({ itemId: item.id, gapMs: warmupFrameGapMs, recordedAt: now() });
       setOptionsDisabled(false);
       state.choiceExposureTimeout = setTimeout(() => {
         const shown = $('.choice-stage .stimulus, #choice-stage .stimulus');
         if (shown && !answered) { shown.textContent = '+'; shown.classList.add('masked'); finishExposure('timer'); }
       }, section.exposureMs);
-    });
+    }));
   }
   // 들려주는 문항: 소리가 끝난 때부터 반응 시간을 잰다 (먼저 눌러도 된다).
   if (item.audio) {
@@ -941,7 +1254,96 @@ function choice() {
     left();
     $('#listen-again').onclick = () => { plays[section.id] = (plays[section.id] || 0) + 1; session.choiceSections[section.id].storyReplays = plays[section.id]; left(); playStory(); };
   }
-  prepareChoiceStep(state.choiceIndex + 1);
+  queueChoicePreparation(state.choiceIndex + 1);
+}
+
+function rotated(values, offset) { return [...values.slice(offset), ...values.slice(0, offset)]; }
+
+function startSupportExperiment(session) {
+  if (!session.supportExperiment) {
+    const seed = [...String(session.participant || session.id)].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    const conditionOrder = rotated(['L0', 'L1', 'L2'], seed % 3);
+    const formOrder = rotated(SUPPORT_FORMS.map(form => form.id), (seed * 2 + 1) % 3);
+    session.supportExperiment = {
+      version: SUPPORT_EXPERIMENT_VERSION,
+      design: 'THREE_PARALLEL_CANDIDATES_COUNTERBALANCED',
+      conditionOrder,
+      plan: conditionOrder.map((condition, index) => ({ condition, formId: formOrder[index] })),
+      trials: [], startedAt: now(), scorePolicy: 'SEPARATE_FROM_BASELINE'
+    };
+    upsertSession(session);
+  }
+  state.scaffoldIndex = session.supportExperiment.trials.length;
+  render('scaffold');
+}
+
+function scaffoldPassage(form, condition) {
+  if (condition === 'L1') {
+    const index = form.passage.indexOf(form.evidence);
+    if (index >= 0) return `${esc(form.passage.slice(0, index))}<mark>${esc(form.evidence)}</mark>${esc(form.passage.slice(index + form.evidence.length))}`;
+  }
+  if (condition === 'L2') return form.passage.split(/(?<=\.)\s*/u).filter(Boolean).map((sentence, index) => `<span class="support-segment"><b>${index + 1}</b>${esc(sentence)}</span>`).join('');
+  return esc(form.passage);
+}
+
+function scaffold() {
+  const session = state.session;
+  const experiment = session.supportExperiment;
+  const plan = experiment.plan[state.scaffoldIndex];
+  if (!plan) {
+    experiment.completedAt = now();
+    upsertSession(session);
+    return finishAssessment(session);
+  }
+  const form = SUPPORT_FORMS.find(candidate => candidate.id === plan.formId);
+  const supportLabel = { L0: '도움 없이 읽기', L1: '핵심 문장 표시', L2: '문장 나누기와 듣기' }[plan.condition];
+  $('#scaffold-progress').textContent = `${state.scaffoldIndex + 1} / ${experiment.plan.length}`;
+  $('#scaffold-instruction').textContent = plan.condition === 'L0' ? '글을 읽고 질문에 답하세요.' : plan.condition === 'L1' ? '표시된 문장을 참고해 질문에 답하세요.' : '문장을 하나씩 확인하세요. 필요하면 글을 들을 수 있습니다.';
+  $('#scaffold-passage').innerHTML = scaffoldPassage(form, plan.condition);
+  $('#scaffold-question').textContent = form.question;
+  const supportOptions = shuffled(form.options, seededRandom(`${form.id}-${plan.condition}`));
+  $('#scaffold-options').innerHTML = supportOptions.map((option, index) => `<button class="choice-option" type="button" data-value="${esc(option)}"><kbd>${index + 1}</kbd>${esc(option)}</button>`).join('');
+  const audioRow = $('#scaffold-audio-row');
+  audioRow.classList.toggle('hidden', plan.condition !== 'L2');
+  const supportEvents = [{ type: 'CONDITION_SHOWN', condition: plan.condition, atMs: 0 }];
+  const shownAt = performance.now();
+  let audioPlays = 0;
+  if (plan.condition === 'L2') $('#scaffold-audio').onclick = async () => {
+    audioPlays++;
+    supportEvents.push({ type: 'AUDIO_REQUESTED', atMs: Math.round(performance.now() - shownAt) });
+    $('#scaffold-audio').disabled = true;
+    const result = await speak(form.passage, { kind: 'support', sectionId: SUPPORT_EXPERIMENT_VERSION, itemId: form.id, condition: plan.condition });
+    $('#scaffold-audio-status').textContent = result.ok ? '재생 완료' : '재생 실패';
+    $('#scaffold-audio').disabled = false;
+    supportEvents.push({ type: result.ok ? 'AUDIO_COMPLETED' : 'AUDIO_FAILED', atMs: Math.round(performance.now() - shownAt) });
+  };
+  let answered = false;
+  $$('#scaffold-options .choice-option').forEach(button => button.onclick = () => {
+    if (answered) return;
+    answered = true;
+    $$('#scaffold-options .choice-option').forEach(option => { option.disabled = true; if (option === button) option.classList.add('chosen'); });
+    experiment.trials.push({ condition: plan.condition, conditionLabel: supportLabel, formId: form.id, response: button.dataset.value, answer: form.answer,
+      correct: button.dataset.value === form.answer, rtMs: Math.round(performance.now() - shownAt), audioPlays, supportEvents, recordedAt: now(), scorePolicy: 'EXPLORATORY_SEPARATE' });
+    session.updatedAt = now();
+    upsertSession(session);
+    state.scaffoldIndex++;
+    setTimeout(() => {
+      if (state.scaffoldIndex >= experiment.plan.length) {
+        experiment.completedAt = now(); upsertSession(session); finishAssessment(session);
+      } else render('scaffold', { history: 'replace' });
+    }, 350);
+  });
+  document.onkeydown = event => {
+    const index = Number(event.key) - 1;
+    const button = $$('#scaffold-options .choice-option')[index];
+    if (button && !button.disabled) { event.preventDefault(); button.click(); }
+  };
+  $('#scaffold-quit').onclick = () => {
+    if (!confirm('추가 읽기 활동을 중단하고 검사를 마칠까요? 지금까지 기록은 남습니다.')) return;
+    experiment.interruptedAt = now();
+    upsertSession(session);
+    finishAssessment(session);
+  };
 }
 
 async function saveBlob(key, blob) {
@@ -979,28 +1381,139 @@ function formatTime(value) {
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
+const playbackBoostNodes = new WeakMap();
+function connectPlaybackBoost(audio, checkbox) {
+  if (!audio || !checkbox || playbackBoostNodes.has(audio)) return;
+  try {
+    const context = new AudioContext();
+    const source = context.createMediaElementSource(audio);
+    const gain = context.createGain();
+    const limiter = context.createDynamicsCompressor();
+    gain.gain.value = checkbox.checked ? 1.6 : 1;
+    limiter.threshold.value = -4;
+    limiter.knee.value = 2;
+    limiter.ratio.value = 12;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.12;
+    source.connect(gain).connect(limiter).connect(context.destination);
+    checkbox.onchange = () => { gain.gain.setTargetAtTime(checkbox.checked ? 1.6 : 1, context.currentTime, 0.02); };
+    audio.onplay = () => context.resume();
+    playbackBoostNodes.set(audio, { context, gain, limiter });
+  } catch {
+    checkbox.checked = false;
+    checkbox.disabled = true;
+    checkbox.closest('label').title = '이 브라우저에서는 재생 증폭을 사용할 수 없습니다.';
+  }
+}
+
+function timedWordLayoutAudit(stimulus = $('#stimulus')) {
+  const nodes = stimulus ? $$('[data-word-index]', stimulus) : [];
+  const viewport = { width: window.innerWidth, height: window.innerHeight, scale: window.visualViewport?.scale || 1 };
+  const rects = nodes.map(node => {
+    const rect = node.getBoundingClientRect();
+    return { index: Number(node.dataset.wordIndex), left: Math.round(rect.left), top: Math.round(rect.top), right: Math.round(rect.right), bottom: Math.round(rect.bottom), width: Math.round(rect.width), height: Math.round(rect.height) };
+  });
+  const visible = rects.filter(rect => rect.left >= 0 && rect.top >= 0 && rect.right <= viewport.width && rect.bottom <= viewport.height);
+  const columns = new Set(rects.map(rect => rect.left)).size;
+  const rows = new Set(rects.map(rect => rect.top)).size;
+  const required = SPEC.PRESENTATION.timedWordGrid.requiredVisibleItems;
+  const valid = nodes.length === required && visible.length === required && columns === SPEC.PRESENTATION.timedWordGrid.columns && rows === SPEC.PRESENTATION.timedWordGrid.rows && document.documentElement.scrollWidth <= window.innerWidth + 1;
+  return { valid, itemCount: nodes.length, visibleCount: visible.length, columns, rows, viewport, horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1, scrollX: Math.round(window.scrollX), scrollY: Math.round(window.scrollY), rects, checkedAt: now() };
+}
+
+function beginTimedPresentationMonitoring() {
+  if (state.presentationAuditCleanup) state.presentationAuditCleanup();
+  const audit = state.currentPresentationAudit ||= { events: [] };
+  const note = type => audit.events.push({ type, atPerfMs: Math.round(performance.now()), at: now(), viewport: { width: window.innerWidth, height: window.innerHeight, scale: window.visualViewport?.scale || 1 }, scrollX: Math.round(window.scrollX), scrollY: Math.round(window.scrollY) });
+  const onVisibility = () => { if (document.visibilityState !== 'visible') note('DOCUMENT_HIDDEN'); };
+  const onResize = () => note('VIEWPORT_RESIZED');
+  const onScroll = () => note('SCROLLED_DURING_TIMED_TASK');
+  const onBlur = () => note('WINDOW_BLURRED');
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', onResize);
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('blur', onBlur);
+  state.presentationAuditCleanup = () => {
+    document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('resize', onResize);
+    window.removeEventListener('orientationchange', onResize);
+    window.removeEventListener('scroll', onScroll);
+    window.removeEventListener('blur', onBlur);
+    state.presentationAuditCleanup = null;
+  };
+}
+
+function finishTimedPresentationMonitoring(stimulus) {
+  if (!state.currentPresentationAudit) return null;
+  if (state.presentationAuditCleanup) state.presentationAuditCleanup();
+  state.currentPresentationAudit.endLayout = timedWordLayoutAudit(stimulus);
+  state.currentPresentationAudit.valid = Boolean(state.currentPresentationAudit.startLayout?.valid && state.currentPresentationAudit.endLayout.valid && !state.currentPresentationAudit.events.length && state.currentTaskTiming?.valid);
+  state.currentPresentationAudit.status = state.currentPresentationAudit.valid ? 'VALID' : 'PRESENTATION_INVALID';
+  return state.currentPresentationAudit;
+}
+
+const nextPaints = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
 function task() {
   const item = state.taskQueue[state.taskIndex];
   state.currentBlob = null;
   state.currentQuality = null;
+  state.currentTaskTiming = null;
+  state.currentPresentationAudit = null;
+  state.recordingStartedPerf = null;
+  state.recordingStopReason = null;
   state.seconds = 0;
   state.shownAt = now();
   $('#task-name').textContent = `${moduleName(item.module)}${item.practice ? ' · 연습' : ''}`;
-  $('#task-progress').textContent = `${state.taskIndex + 1} / ${state.taskQueue.length}`;
+  const scoredQueue = state.taskQueue.filter(taskItem => !taskItem.ready);
+  const scoredIndex = scoredQueue.indexOf(item);
+  $('#task-progress').textContent = item.ready ? '본검사 준비' : `${scoredIndex + 1} / ${scoredQueue.length}`;
   const sameModule = state.taskQueue.filter(task => task.module === item.module);
   drawJourney(item.module, sameModule.indexOf(state.taskQueue[state.taskIndex]));
+  if (item.ready) {
+    $('.task-stage').innerHTML = `<div class="ready-panel"><p class="eyebrow">연습 끝</p><h1>${esc(moduleName(item.module))} 본검사를 시작합니다</h1><p>이제부터는 정답을 알려 드리지 않습니다. 준비되면 시작을 눌러 주세요.</p><button class="primary" id="task-main-start" type="button">본검사 시작</button></div>`;
+    $('#task-main-start').onclick = () => { state.taskIndex++; render('task', { history: 'replace' }); };
+    $('#quit-task').onclick = () => {
+      if (confirm('검사를 중단하고 나갈까요? 지금까지 저장한 응답은 남습니다.')) {
+        state.session.status = 'INTERRUPTED';
+        state.session.updatedAt = now();
+        upsertSession(state.session);
+        stopStream();
+        state.taskQueue = [];
+        render('home');
+      }
+    };
+    return;
+  }
   $('#practice-banner').classList.toggle('hidden', !item.practice);
   $('#task-tags').innerHTML = [item.id, item.kind, item.condition, item.rule].filter(Boolean).map(tag => `<span>${esc(tag)}</span>`).join('');
   const stimulus = $('#stimulus');
-  stimulus.textContent = item.text;
-  stimulus.className = `stimulus ${item.module === 'decoding' ? 'word' : 'passage'}`;
-  const taskInstruction = item.module === 'decoding' ? '화면의 글자열을 한 번 소리 내어 읽어주세요.' : '글을 처음부터 끝까지 소리 내어 읽어주세요. 60초가 지나도 끝까지 계속 읽습니다.';
+  if (item.taskType === 'timed-word-list') {
+    stimulus.innerHTML = item.words.map((word, index) => `<span data-word-index="${index}">${esc(word.text)}</span>`).join('');
+    stimulus.setAttribute('aria-label', item.text);
+  } else {
+    stimulus.textContent = item.text;
+    stimulus.removeAttribute('aria-label');
+  }
+  stimulus.className = `stimulus ${item.module === 'decoding' ? 'word' : item.taskType === 'timed-word-list' ? 'word-list' : 'passage'}`;
+  const taskInstruction = item.module === 'decoding'
+    ? '화면의 글자열을 한 번 소리 내어 읽어주세요.'
+    : item.taskType === 'timed-word-list'
+      ? `낱말을 왼쪽에서 오른쪽으로 소리 내어 읽어주세요. ${item.timeLimitSec}초가 되면 녹음이 자동으로 끝납니다.`
+      : '글을 처음부터 끝까지 소리 내어 읽어주세요. 60초가 지나도 끝까지 계속 읽습니다.';
   $('#task-instruction').textContent = taskInstruction;
   const taskVoice = ensureTtsProfile(state.session);
   $('#task-voice-status').textContent = taskVoice?.voice ? `잠정 음성: ${taskVoice.profile.voice.name}` : '한국어 음성 안내를 사용할 수 없습니다.';
   $('#task-instruction-audio').onclick = async () => {
     const outcome = await speak(taskInstruction, { kind: 'instruction', module: item.module, itemId: item.id });
     $('#task-voice-status').textContent = outcome.ok ? `안내 재생 완료 · ${outcome.voice?.name || '시험용 음성'}` : '안내를 재생하지 못했습니다. 검사자가 같은 내용을 말로 설명해 주세요.';
+  };
+  $('#task-explanation').onclick = () => {
+    state.session.instructionEvents ||= [];
+    state.session.instructionEvents.push({ kind: 'ADDITIONAL_EXPLANATION', module: item.module, itemId: item.id, recordedAt: now() });
+    $('#task-explanation').textContent = '추가 설명 기록됨';
+    upsertSession(state.session);
   };
   $('#quit-task').onclick = () => {
     if (confirm('현재까지 저장한 응답은 남겨두고 검사를 중단할까요?')) {
@@ -1020,6 +1533,20 @@ function task() {
     if (!recording) {
       try {
         const stream = await getMic();
+        if (item.taskType === 'timed-word-list') {
+          const previousScrollBehavior = document.documentElement.style.scrollBehavior;
+          document.documentElement.style.scrollBehavior = 'auto';
+          stimulus.scrollIntoView({ block: 'center', inline: 'nearest' });
+          await nextPaints();
+          document.documentElement.style.scrollBehavior = previousScrollBehavior;
+          const startLayout = timedWordLayoutAudit(stimulus);
+          if (!startLayout.valid) {
+            state.currentPresentationAudit = { startLayout, events: [], valid: false, status: 'PRESENTATION_INVALID', reason: 'ALL_60_WORDS_NOT_VISIBLE_IN_FIXED_5X12_GRID' };
+            alert(`45초 낱말 목록 전체가 화면에 보여야 시작할 수 있습니다. 현재 ${startLayout.visibleCount}/${startLayout.itemCount}개가 보입니다. 창을 최대화하거나 화면 배율을 낮춘 뒤 다시 눌러 주세요.`);
+            return;
+          }
+          state.currentPresentationAudit = { startLayout, events: [], formId: item.formId, startedAt: now(), status: 'MONITORING' };
+        }
         state.chunks = [];
         state.recorder = new MediaRecorder(stream);
         state.recorder.ondataavailable = event => { if (event.data.size) state.chunks.push(event.data); };
@@ -1029,34 +1556,60 @@ function task() {
           const playback = $('#playback');
           playback.src = URL.createObjectURL(state.currentBlob);
           playback.classList.remove('hidden');
+          $('#playback-boost-row').classList.remove('hidden');
+          connectPlaybackBoost(playback, $('#playback-boost'));
           nextButton.classList.remove('hidden');
           retryButton.classList.remove('hidden');
           const quality = $('#quality-summary');
           quality.classList.remove('hidden');
-          const speech = state.currentQuality.speech;
-          const speechText = speech?.onsetMs != null ? ` · 발화 시작 ${(speech.onsetMs / 1000).toFixed(2)}초 · 발화 길이 ${((speech.offsetMs - speech.onsetMs) / 1000).toFixed(1)}초${speech.pauses.length ? ` · 긴 멈춤 ${speech.pauses.length}회` : ''}` : '';
-          quality.innerHTML = `<b>음질·발화 후보</b><span>${esc(state.currentQuality.flags.join(' · ') + speechText)}</span><small>자동 품질값은 최종 판정이 아닙니다.</small>`;
+          const needsRetry = state.currentQuality.flags.some(flag => ['지나치게 짧음', '입력 음량 매우 낮음', '발화 미탐지'].includes(flag));
+          const invalidPresentation = item.taskType === 'timed-word-list' && state.currentPresentationAudit?.valid === false;
+          quality.innerHTML = invalidPresentation
+            ? `<b>실시 조건이 바뀌어 점수에서 제외됩니다</b><span>${esc(state.currentPresentationAudit.events.map(event => event.type).join(', ') || '화면 가시성 또는 45초 종료 오차')} · 원음성은 보존됩니다.</span>`
+            : needsRetry
+            ? '<b>녹음 상태를 확인해 주세요</b><span>아래에서 소리를 들어 보고, 잘 들리지 않으면 다시 녹음해 주세요.</span>'
+            : '<b>녹음이 저장되었습니다</b><span>아래에서 소리를 확인하거나 다음 항목으로 이동해 주세요.</span>';
         };
         state.recordingStartedAt = now();
+        state.recordingStartedPerf = performance.now();
+        state.recordingStopReason = null;
         state.recorder.start(250);
         recording = true;
+        if (item.taskType === 'timed-word-list') beginTimedPresentationMonitoring();
         recordButton.classList.add('stop');
         $('#record-dot').classList.add('live');
         $('#record-label').textContent = '녹음 중';
-        $('#record-help').textContent = '읽기가 끝나면 버튼을 다시 누르세요.';
+        $('#record-help').textContent = item.taskType === 'timed-word-list' ? `${item.timeLimitSec}초 동안 읽습니다. 끝까지 못 읽어도 괜찮습니다.` : '읽기가 끝나면 버튼을 다시 누르세요.';
         state.timer = setInterval(() => {
           state.seconds++;
           $('#record-time').textContent = formatTime(state.seconds);
           if (item.module === 'fluency' && state.seconds === 60) $('#record-help').textContent = '60초 지점을 기록했습니다. 글 끝까지 계속 읽어주세요.';
         }, 1000);
+        if (item.timeLimitSec) {
+          const deadlinePerf = state.recordingStartedPerf + item.timeLimitSec * 1000;
+          state.recordingDeadlineTimer = setTimeout(() => {
+            if (recording) { state.recordingStopReason = 'AUTO_TIME_LIMIT'; recordButton.click(); }
+          }, Math.max(0, deadlinePerf - performance.now()));
+        }
       } catch {
         alert('마이크 권한이 필요합니다. 장치 권한을 확인한 뒤 다시 시도해 주세요.');
       }
     } else {
+      const stoppedPerf = performance.now();
+      state.recordingStopReason ||= 'MANUAL_STOP';
+      if (item.timeLimitSec && state.recordingStartedPerf != null) {
+        const actualMs = Math.round(stoppedPerf - state.recordingStartedPerf);
+        const targetMs = item.timeLimitSec * 1000;
+        const driftMs = actualMs - targetMs;
+        state.currentTaskTiming = { clock: 'performance.now', targetMs, actualMs, driftMs, toleranceMs: SPEC.PRESENTATION.timedRecordingToleranceMs, stopReason: state.recordingStopReason, valid: state.recordingStopReason === 'AUTO_TIME_LIMIT' && Math.abs(driftMs) <= SPEC.PRESENTATION.timedRecordingToleranceMs };
+      }
       state.recorder.stop();
       recording = false;
       clearInterval(state.timer);
       state.timer = null;
+      clearTimeout(state.recordingDeadlineTimer);
+      state.recordingDeadlineTimer = null;
+      if (item.taskType === 'timed-word-list') finishTimedPresentationMonitoring(stimulus);
       recordButton.classList.remove('stop');
       $('#record-dot').classList.remove('live');
       $('#record-label').textContent = '녹음 완료';
@@ -1068,8 +1621,16 @@ function task() {
     state.currentQuality = null;
     state.seconds = 0;
     state.recordingStartedAt = null;
+    state.recordingStartedPerf = null;
+    state.currentTaskTiming = null;
+    state.currentPresentationAudit = null;
+    state.recordingStopReason = null;
+    if (state.presentationAuditCleanup) state.presentationAuditCleanup();
+    clearTimeout(state.recordingDeadlineTimer);
+    state.recordingDeadlineTimer = null;
     $('#record-time').textContent = '00:00';
     $('#playback').classList.add('hidden');
+    $('#playback-boost-row').classList.add('hidden');
     nextButton.classList.add('hidden');
     retryButton.classList.add('hidden');
     $('#quality-summary').classList.add('hidden');
@@ -1086,10 +1647,13 @@ function task() {
         id: responseId, stimulusId: item.id, module: item.module, target: item.text, expected: item.accepted?.[0] || item.expected || '', kind: item.kind,
         condition: item.condition || '', rule: item.rule || '', practice: Boolean(item.practice), audioKey,
         presentationIndex: state.taskIndex, orderPolicy: state.session.orderPolicy || 'fixed',
-        presentation: { status: 'VALID', valid: true, specVersion: SPEC.VERSION, stimulusType: item.module === 'decoding' ? 'word' : 'passage', shownAt: state.shownAt },
+        presentation: item.taskType === 'timed-word-list'
+          ? { ...(state.currentPresentationAudit || {}), status: state.currentPresentationAudit?.valid ? 'VALID' : 'PRESENTATION_INVALID', valid: Boolean(state.currentPresentationAudit?.valid), timing: state.currentTaskTiming, specVersion: SPEC.VERSION, stimulusType: 'word-list', shownAt: state.shownAt }
+          : { status: 'VALID', valid: true, specVersion: SPEC.VERSION, stimulusType: item.module === 'decoding' ? 'word' : 'passage', shownAt: state.shownAt },
         stimulusShownAt: state.shownAt, recordingStartedAt: state.recordingStartedAt, recordingStoppedAt: now(),
         durationMs: state.currentQuality?.durationMs || state.seconds * 1000, first60Reached: item.module === 'fluency' && state.seconds >= 60,
         accepted: item.accepted || [], lexicality: item.lexicality || '', regularity: item.regularity || '', reviewNote: item.reviewNote || '', passageMeta: item.meta || null,
+        taskType: item.taskType || '', timeLimitSec: item.timeLimitSec || null, formId: item.formId || null, sourceMeta: item.sourceMeta || item.selection || null, itemEvidenceVersion: ITEM_BANK.VERSION,
         quality: state.currentQuality,
         machineAnalysis: {
           status: state.currentQuality?.speech ? 'VAD_ONLY' : 'NOT_CONNECTED', transcript: '', candidate: null, modelVersion: 'energy-vad', configVersion: S.SCORING_CONFIG.version,
@@ -1099,9 +1663,11 @@ function task() {
         },
         ratings: {}, adjudication: null, createdAt: now()
       });
+      // GPU/CPU 음성인식은 자극 렌더링·스크롤과 경쟁하므로 참여자 흐름에서는 전혀 실행하지 않는다.
+      // 연구자가 검증 화면의 "AI 분석"을 눌렀을 때만 순차 분석한다.
+      state.session.responses[state.session.responses.length - 1].machineAnalysis.asrQueueStatus = 'DEFERRED_UNTIL_RESEARCHER_REQUEST';
       state.session.updatedAt = now();
       upsertSession(state.session);
-      queueAutoScore(state.session, state.session.responses[state.session.responses.length - 1]);
       state.taskIndex++;
       if (state.taskIndex < state.taskQueue.length) render('task');
       else {
@@ -1195,18 +1761,22 @@ function asrSpeedText() {
 }
 // 마이크 점검 때 미리 모델을 받아 두면 검사 중·후에 기다리지 않는다.
 async function preloadAsr() {
-  if (asrState.status === 'ready' || asrState.status === 'loading') return;
+  if (asrState.status === 'ready') return;
+  if (asrState.status === 'loading') return asrState.promise;
   asrState.status = 'loading'; drawAsrState();
-  try {
-    const asr = await getAsr();
-    const loaded = asr.load ? await asr.load(message => { asrState.message = message; drawAsrState(); }) : null;
-    asrState.status = 'ready';
-    asrState.model = loaded?.model?.label || loaded?.model?.id || asr.modelLabel || '음성인식';
-  } catch (error) {
-    asrState.status = 'error';
-    asrState.message = `${error.message || error} · 인터넷 연결(jsdelivr.net, huggingface.co)을 확인하세요.`;
-  }
-  drawAsrState();
+  asrState.promise = (async () => {
+    try {
+      const asr = await getAsr();
+      const loaded = asr.load ? await asr.load(message => { asrState.message = message; drawAsrState(); }) : null;
+      asrState.status = 'ready';
+      asrState.model = loaded?.model?.label || loaded?.model?.id || asr.modelLabel || '음성인식';
+    } catch (error) {
+      asrState.status = 'error';
+      asrState.message = `${error.message || error} · 인터넷 연결(jsdelivr.net, huggingface.co)을 확인하세요.`;
+    }
+    drawAsrState();
+  })();
+  try { await asrState.promise; } finally { asrState.promise = null; }
 }
 
 // 한 응답에 ASR을 돌리고 후처리(제한 후보 선택 또는 지문 정렬)까지 machineAnalysis에 저장한다.
@@ -1232,6 +1802,10 @@ async function analyzeResponseWithAsr(session, response, onProgress) {
 // 자동 채점: ASR 결과 → 문항 점수(autoRating). 결과지는 이 값을 쓴다.
 async function autoScoreResponse(session, response, onProgress) {
   if (response.practice || !response.audioKey) return false;
+  if (response.presentation?.valid === false) {
+    response.autoRating = { itemScore: 'UNSCORABLE', reason: response.presentation.status || 'PRESENTATION_INVALID', scoredAt: now(), model: 'presentation-quality-gate' };
+    return true;
+  }
   if (response.machineAnalysis?.asr?.status !== 'DONE' && !(await analyzeResponseWithAsr(session, response, onProgress))) return false;
   const asr = response.machineAnalysis.asr;
   const speech = response.quality?.speech;
@@ -1243,19 +1817,8 @@ async function autoScoreResponse(session, response, onProgress) {
   return true;
 }
 
-const analysisQueue = { chain: Promise.resolve(), pending: 0 };
-function queueAutoScore(session, response) {
-  if (response.practice) return;
-  analysisQueue.pending++;
-  analysisQueue.chain = analysisQueue.chain.then(async () => {
-    try { if (await autoScoreResponse(session, response)) { session.updatedAt = now(); upsertSession(session); } }
-    catch (error) { response.autoError = String(error.message || error); }
-    finally { analysisQueue.pending--; }
-  });
-}
 // 아직 자동 채점이 없는 응답을 모두 채점한다 (검사 직후, 또는 결과지에서 다시 시도).
 async function autoScoreSession(session, onProgress = () => {}) {
-  await analysisQueue.chain;
   const targets = scoredResponses(session).filter(response => !response.autoRating && response.audioKey);
   for (const [i, response] of targets.entries()) {
     onProgress(i, targets.length, '');
@@ -1270,33 +1833,13 @@ async function autoScoreSession(session, onProgress = () => {}) {
 
 function complete() {
   const session = state.session;
-  const status = $('#complete-status');
-  const bar = $('#complete-bar');
-  const done = () => {
-    $('#complete-title').textContent = '결과지가 준비되었습니다';
-    status.textContent = scoredResponses(session).length ? `시스템이 녹음을 듣고 자동 채점했습니다${session.sttModelLabel ? ` (음성인식: ${session.sttModelLabel})` : ''}${session.choiceAnswers?.length ? '. 선택형 과제는 답하는 즉시 채점했습니다' : ''}.` : '답하는 즉시 채점했습니다.';
-    bar.style.width = '100%';
-    $('#complete-report').disabled = false;
-  };
-  if (!session || session.status === 'SCORED') return session ? done() : null;
-  $('#complete-report').disabled = true;
-  const run = async () => {
-    status.textContent = '녹음을 분석하고 있습니다…';
-    // 검사 중에 뒤에서 돌던 채점이 남아 있으면 남은 개수를 보여 준다.
-    const watch = setInterval(() => { if (analysisQueue.pending && state.view === 'complete') status.textContent = `검사 중에 미리 채점하던 녹음 ${analysisQueue.pending}개를 마무리하는 중 · ${asrSpeedText()}`; }, 400);
-    try {
-      await autoScoreSession(session, (i, n, message) => { status.textContent = `자동 채점 ${i + 1} / ${n}${message ? ` · ${message}` : ''}${asrSpeedText() ? ` · ${asrSpeedText()}` : ''}`; bar.style.width = `${Math.round(i / Math.max(n, 1) * 100)}%`; });
-      clearInterval(watch);
-      if (state.view === 'complete') done();
-    } catch (error) {
-      clearInterval(watch);
-      if (state.view !== 'complete') return;
-      status.innerHTML = `<b>자동 채점을 마치지 못했습니다.</b> ${esc(error.message || error)} · 처음 한 번은 음성인식 모델을 내려받아야 하므로 인터넷 연결이 필요합니다.`;
-      $('#complete-retry').classList.remove('hidden');
-    }
-  };
-  $('#complete-retry').onclick = () => { $('#complete-retry').classList.add('hidden'); run(); };
-  run();
+  if (!session) return;
+  const pending = scoredResponses(session).filter(response => response.audioKey && !response.autoRating).length;
+  $('#complete-status').textContent = pending
+    ? `응답 저장 완료 · 녹음 ${pending}개는 아직 자동 분석하지 않았습니다. 참여자는 기다리지 않고 결과 요약을 볼 수 있습니다.`
+    : '응답 저장과 채점이 끝났습니다. 참여자용 결과 요약을 볼 수 있습니다.';
+  $('#complete-bar').style.width = '100%';
+  $('#complete-report').disabled = false;
 }
 
 function review() {
@@ -1320,19 +1863,20 @@ function review() {
     const session = list.find(item => item.id === sessionSelect.value) || list[0];
     const status = $('#asr-status');
     const button = $('#run-asr');
-    const targets = session.responses.filter(response => response.audioKey && response.machineAnalysis?.asr?.status !== 'DONE');
+    const targets = session.responses.filter(response => !response.practice && response.audioKey && !response.autoRating);
     status.classList.remove('hidden');
     if (!targets.length) { status.textContent = session.demo ? '예시 기록에는 원음성이 없어 AI 분석을 할 수 없습니다.' : '모든 녹음에 AI 분석이 이미 있습니다.'; return; }
     button.disabled = true;
     let done = 0;
     try {
       for (const response of targets) {
-        status.textContent = `AI 분석 ${done + 1} / ${targets.length}: ${response.stimulusId} · 처음 한 번은 모델(약 80MB)을 내려받습니다.`;
-        await analyzeResponseWithAsr(session, response, message => { status.textContent = `AI 분석 ${done + 1} / ${targets.length}: ${message}`; });
+        status.textContent = `AI 분석 ${done + 1} / ${targets.length}: ${response.stimulusId} · 처음 한 번은 Whisper small 모델을 내려받습니다.`;
+        await autoScoreResponse(session, response, message => { status.textContent = `AI 분석 ${done + 1} / ${targets.length}: ${message}`; });
         done++;
         upsertSession(session);
       }
-      status.textContent = `AI 분석 완료: ${done}개 녹음. 결과지 점수는 자동 채점값이며, 이 화면의 사람 채점은 자동 채점 정확도를 검증하는 연구용 자료입니다.`;
+      if (scoredResponses(session).every(response => response.autoRating || !response.audioKey)) { session.status = 'SCORED'; session.scoredAt = now(); upsertSession(session); }
+      status.textContent = `AI 분석·후보 채점 완료: ${done}개 녹음. 이 값은 연구 후보이며 사람 채점과의 일치도를 검증해야 합니다.`;
     } catch (error) {
       status.textContent = `AI 분석을 마치지 못했습니다 (${done}개 완료). ${error.message || error} · 인터넷 연결(jsdelivr.net, huggingface.co)을 확인하세요.`;
     } finally { button.disabled = false; drawSession(); }
@@ -1787,7 +2331,7 @@ async function exportSession(session) {
   const payload = JSON.parse(JSON.stringify(session));
   payload.exportedAt = now();
   payload.appVersion = APP_VERSION;
-  payload.versions = { policy: POLICY_VERSION, content: CONTENT_VERSION, rating: RATING_VERSION, scoringConfig: S.SCORING_CONFIG };
+  payload.versions = { policy: POLICY_VERSION, content: CONTENT_VERSION, extensionPolicy: EXTENSION_POLICY_VERSION, rating: RATING_VERSION, scoringConfig: S.SCORING_CONFIG };
   const withAudio = confirm('원음성을 JSON 안에 함께 넣을까요?\n(다른 기기에서 가져오기 할 때 필요합니다. 파일이 커집니다.)');
   if (withAudio) {
     payload.audio = {};
@@ -1936,8 +2480,10 @@ function buildDemoSession() {
     createdAt: created, updatedAt: created, startedAt: created, screening: { words, sentence, decision, contentVersion: 'screening-form-0.2', finishedAt: created }, responses: [], status: 'SCORED', length: 'full',
     routing: { recommended: decision.paths, final: decision.paths, added: [], removed: [], decidedAt: created },
     previewPaths: decision.paths, previewLog: PREVIEW_SUBTESTS.filter(subtest => decision.paths.includes(subtest.pathId)).map(subtest => subtest.id), orderPolicy: 'fixed',
-    appVersion: APP_VERSION, formVersion: CONTENT_VERSION, policyVersion: POLICY_VERSION, ratingVersion: RATING_VERSION, pronunciationDictVersion: PRONUNCIATION_DICT_VERSION, sttModelVersion: 'not-run', schemaVersion: '0.4',
-    assessmentSpecVersion: SPEC.VERSION, environment: SPEC.environmentSnapshot(window), presentationLog: [], ttsEvents: []
+    appVersion: APP_VERSION, formVersion: CONTENT_VERSION, policyVersion: POLICY_VERSION, ratingVersion: RATING_VERSION, pronunciationDictVersion: PRONUNCIATION_DICT_VERSION, sttModelVersion: 'not-run', schemaVersion: '0.5',
+    assessmentSpecVersion: SPEC.VERSION, extensionPolicyVersion: EXTENSION_POLICY_VERSION, aItemBlueprint: A_BLUEPRINT_AUDIT,
+    digitalReadingExtensionEnabled: true, morphologyExtensionEnabled: true, advancedComprehensionExtensionEnabled: true,
+    environment: SPEC.environmentSnapshot(window), presentationLog: [], ttsEvents: []
   };
   // 예시 음성인식 결과: [문항 ID, 인식된 말, 반응 시작 ms]. 실제 검사에서는 녹음에서 이 값이 나온다.
   const decodingPlan = [
@@ -1991,6 +2537,17 @@ function buildDemoSession() {
         presentation: { status: 'VALID', valid: true, targetMs: section.exposureMs || null, actualMs: section.exposureMs || null, driftMs: 0, endedBy: section.exposureMs ? 'timer' : null, toleranceMs: SPEC.PRESENTATION.exposureToleranceMs, preloadLeadMs: 500 } });
     }
   }
+  session.supportExperimentEnabled = true;
+  session.supportExperiment = {
+    version: SUPPORT_EXPERIMENT_VERSION, design: 'THREE_PARALLEL_CANDIDATES_COUNTERBALANCED', conditionOrder: ['L0', 'L1', 'L2'],
+    plan: [{ condition: 'L0', formId: 'SUP-A' }, { condition: 'L1', formId: 'SUP-B' }, { condition: 'L2', formId: 'SUP-C' }],
+    scorePolicy: 'SEPARATE_FROM_BASELINE', startedAt: created, completedAt: created,
+    trials: [
+      { condition: 'L0', conditionLabel: '도움 없이 읽기', formId: 'SUP-A', response: SUPPORT_FORMS[0].options[1], answer: SUPPORT_FORMS[0].answer, correct: false, rtMs: 9100, audioPlays: 0, scorePolicy: 'EXPLORATORY_SEPARATE', recordedAt: created },
+      { condition: 'L1', conditionLabel: '핵심 문장 표시', formId: 'SUP-B', response: SUPPORT_FORMS[1].answer, answer: SUPPORT_FORMS[1].answer, correct: true, rtMs: 6300, audioPlays: 0, scorePolicy: 'EXPLORATORY_SEPARATE', recordedAt: created },
+      { condition: 'L2', conditionLabel: '문장 나누기와 듣기', formId: 'SUP-C', response: SUPPORT_FORMS[2].answer, answer: SUPPORT_FORMS[2].answer, correct: true, rtMs: 5900, audioPlays: 1, scorePolicy: 'EXPLORATORY_SEPARATE', recordedAt: created }
+    ]
+  };
   session.status = 'SCORED';
   session.sttModelLabel = '예시 값';
   return session;
@@ -1999,6 +2556,7 @@ function buildDemoSession() {
 $('#reset-data').onclick = () => {
   if (confirm('이 기기에 저장된 모든 검사 기록과 원음성을 삭제할까요? 이 작업은 되돌릴 수 없습니다.')) {
     localStorage.removeItem('readingSessions');
+    localStorage.removeItem('readingTtsPreference');
     indexedDB.deleteDatabase('ReadingPrototypeDB');
     render('home');
   }

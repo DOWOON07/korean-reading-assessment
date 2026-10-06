@@ -172,8 +172,8 @@ assert.deepEqual(sd.paths, ['A']); assert.deepEqual(sd.modules, ['decoding']);
 assert.deepEqual(sd.focus.map(f => f.key), ['nonword', 'phonological']); assert.ok(sd.focus[1].reason.includes('표기대로 읽음 1'));
 const slow = { ...computeFluency({ tokens: sTokens, onsetMs: 0, endMs: 20000 }), seconds: 20 }; // 39/분
 sd = Scoring.screeningDecision({ words: allRight, sentence: slow, ageBand: '아동' });
-assert.deepEqual(sd.paths, ['B']); assert.deepEqual(sd.modules, ['fluency']); assert.ok(sd.flags.B[0].startsWith('정확하지만 느림'));
-assert.deepEqual(sd.focus.map(f => f.key), ['rate']);
+assert.deepEqual(sd.paths, []); assert.deepEqual(sd.modules, []); assert.equal(sd.measures.rateFloor, null);
+assert.deepEqual(sd.focus, []);
 const inaccurate = { ...computeFluency({ tokens: sTokens, marks: { 1: { mark: 'sub' } }, onsetMs: 0, endMs: 3000 }), seconds: 3 };
 sd = Scoring.screeningDecision({ words: allRight, sentence: inaccurate, ageBand: '아동' });
 assert.deepEqual(sd.paths, ['A', 'B']); assert.deepEqual(sd.focus.map(f => f.key), ['accuracy']);

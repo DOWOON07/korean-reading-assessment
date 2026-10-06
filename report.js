@@ -26,7 +26,11 @@ function autoVerification(session) {
   const fluency = S.cohensKappa(list.filter(r => r.module === 'fluency').flatMap(r => S.tokenizePassage(r.target)
     .filter(token => token.index <= Math.min(r.autoRating.lastIndex ?? Infinity, human(r).lastIndex ?? Infinity))
     .map(token => [isError(r.autoRating.marks?.[token.index]) ? 'E' : 'C', isError(human(r).marks?.[token.index]) ? 'E' : 'C'])));
-  return { decoding, fluency };
+  const benchmarkRows = scoredResponses(session).filter(response => response.machineAnalysis?.asr?.text != null && human(response)?.transcript)
+    .map(response => ({ referenceTranscript: human(response).transcript, asrTranscript: response.machineAnalysis.asr.text,
+      audioSeconds: (response.durationMs || 0) / 1000, elapsedMs: response.machineAnalysis.asr.elapsedMs || 0,
+      humanScore: human(response).itemScore, autoScore: response.autoRating?.itemScore }));
+  return { decoding, fluency, benchmark: S.asrBenchmarkSummary(benchmarkRows) };
 }
 
 function report() {
@@ -38,14 +42,91 @@ function report() {
   const preferred = sessionStorage.getItem('readingResultSession');
   if (preferred && list.some(session => session.id === preferred)) select.value = preferred;
   const current = () => list.find(session => session.id === select.value) || list[0];
+  let audience = 'participant';
   // 모듈별 검사 기록은 그 모듈 결과지를 기본으로 연다.
   const defaultScope = session => session.mode === 'module' && session.modules.length ? session.modules[0] : 'all';
   scope.value = defaultScope(current());
-  const draw = () => { sessionStorage.setItem('readingResultSession', select.value); drawReport(current(), scope.value); };
+  const draw = () => {
+    sessionStorage.setItem('readingResultSession', select.value);
+    scope.classList.toggle('hidden', audience !== 'research');
+    $('#participant-report-view').classList.toggle('active', audience === 'participant');
+    $('#research-report-view').classList.toggle('active', audience === 'research');
+    if (audience === 'participant') drawParticipantReport(current()); else drawReport(current(), scope.value);
+  };
   select.onchange = () => { scope.value = defaultScope(current()); draw(); };
   scope.onchange = draw;
+  $('#participant-report-view').onclick = () => { audience = 'participant'; draw(); };
+  $('#research-report-view').onclick = () => { audience = 'research'; draw(); };
   $('#print-report').onclick = () => window.print();
   draw();
+}
+
+function participantRating(response) {
+  if (['AGREE', 'CONSENSUS'].includes(response.adjudication?.status)) return response.adjudication.finalRating;
+  return response.autoRating || null;
+}
+
+function participantDomainRows(session) {
+  const rows = [];
+  const add = (name, correct, total, note, state = 'done') => rows.push({ name, correct, total, note, state });
+  const recording = scoredResponses(session);
+  for (const [module, label] of [['decoding', '낱말 소리 내어 읽기'], ['fluency', '글 소리 내어 읽기']]) {
+    const all = recording.filter(response => response.module === module);
+    if (!all.length) continue;
+    if (module === 'fluency') {
+      const subsets = [
+        ['45초 낱말 읽기', all.filter(response => response.taskType === 'timed-word-list')],
+        [label, all.filter(response => response.taskType !== 'timed-word-list')]
+      ];
+      for (const [subsetLabel, subset] of subsets) {
+        if (!subset.length) continue;
+        const rated = subset.map(response => ({ response, rating: participantRating(response) }))
+          .filter(entry => entry.rating && entry.rating.itemScore !== 'UNSCORABLE');
+        const invalid = subset.filter(response => participantRating(response)?.itemScore === 'UNSCORABLE');
+        if (!rated.length && invalid.length) add(subsetLabel, null, subset.length, '창 이탈·스크롤·시간 오차 등 실시 조건 문제로 이번 점수에서 제외했습니다.', 'invalid');
+        else if (!rated.length) add(subsetLabel, null, subset.length, '녹음은 저장되었고 연구자 분석을 기다리고 있습니다.', 'pending');
+        else if (subsetLabel === '45초 낱말 읽기') {
+          const correct = rated.reduce((sum, entry) => sum + (entry.rating.metrics?.correctEojeol || 0), 0);
+          add(subsetLabel, correct, null, `45초 안에 정확히 읽은 낱말 ${correct}개 · 또래 규준 없는 후보값`);
+        } else {
+          const accuracy = rated.map(entry => entry.rating.metrics?.accuracyEojeol).filter(Number.isFinite);
+          add(subsetLabel, null, rated.length, accuracy.length ? `어절 정확도 ${Math.round(accuracy.reduce((a, b) => a + b, 0) / accuracy.length)}%` : '낭독 분석이 완료되었습니다.');
+        }
+      }
+      continue;
+    }
+    const rated = all.map(response => ({ response, rating: participantRating(response) })).filter(entry => entry.rating);
+    if (!rated.length) add(label, null, all.length, '녹음은 저장되었고 연구자 분석을 기다리고 있습니다.', 'pending');
+    else add(label, rated.filter(entry => entry.rating.itemScore === 'CORRECT').length, rated.length, '정확하게 읽은 낱말 수');
+  }
+  const c = choiceStats(session);
+  for (const module of CHOICE_SCOPES) {
+    const summary = c.modulesCore[module];
+    if (summary) add(CHOICE_MODULES[module].title, summary.correct, summary.n, '이번 후보 문항의 정답 수');
+  }
+  return rows;
+}
+
+function drawParticipantReport(session) {
+  const date = new Date(session.startedAt || session.createdAt).toLocaleDateString('ko-KR');
+  const rows = participantDomainRows(session);
+  const pending = rows.filter(row => row.state === 'pending').length;
+  const invalid = rows.filter(row => row.state === 'invalid').length;
+  const completed = rows.filter(row => row.state === 'done');
+  const strongest = completed.filter(row => row.total && row.correct != null).sort((a, b) => b.correct / b.total - a.correct / a.total)[0];
+  const cards = rows.map(row => {
+    const pct = row.total && row.correct != null ? Math.round(row.correct / row.total * 100) : null;
+    const stateLabel = row.state === 'pending' ? '분석 전' : row.state === 'invalid' ? '점수 제외' : '확인 완료';
+    return `<article class="participant-result-card ${row.state}"><div><span class="result-state">${stateLabel}</span><h3>${esc(row.name)}</h3><p>${esc(row.note)}</p></div>${pct == null ? `<b class="participant-score">${row.correct == null ? '—' : row.correct}</b>` : `<div class="participant-score"><b>${row.correct}/${row.total}</b><span>${pct}%</span></div>`}</article>`;
+  }).join('');
+  $('#report-content').innerHTML = `
+    <header class="participant-report-head"><p class="eyebrow">읽기 확인 결과 · 표준화 전 연구판</p><h2>${esc(session.participant)}님의 이번 기록</h2><p>${date} · ${esc(session.ageBand)} 구간</p></header>
+    ${session.demo ? '<p class="notice warning">화면 시연용 예시 자료입니다. 실제 참여자 결과가 아닙니다.</p>' : ''}
+    <section class="participant-summary-callout"><h3>${invalid ? '일부 활동은 실시 조건 문제로 점수에서 제외했습니다.' : pending ? '완료된 결과와 분석을 기다리는 결과가 있습니다.' : '이번 읽기 활동을 모두 마쳤습니다.'}</h3><p>${strongest ? `이번 후보 문항에서는 “${esc(strongest.name)}”에서 가장 높은 정답 비율을 보였습니다.` : invalid ? '같은 조건에서 해당 활동을 다시 실시하면 결과를 확인할 수 있습니다.' : '녹음 분석이 끝나면 영역별 수행을 더 확인할 수 있습니다.'}</p></section>
+    <section class="participant-result-section"><h3>활동별 결과</h3><div class="participant-result-list">${cards || '<p class="notice">표시할 응답이 없습니다.</p>'}</div></section>
+    <section class="participant-result-section easy-result"><h3>이 결과를 어떻게 보면 되나요?</h3><ul><li><b>숫자</b>는 이번 핵심 후보 문항에서 맞힌 개수입니다.</li><li><b>분석 전</b>은 녹음이 없어졌다는 뜻이 아니라, 연구자가 아직 자동 분석을 시작하지 않았다는 뜻입니다.</li><li>연구자가 선택한 디지털·형태소·고차 문해 확장 결과는 핵심 점수에 합치지 않고 연구자용 상세 결과에서 따로 봅니다.</li><li>현재는 또래 규준이 없어 “또래보다 잘함/어려움”, 백분위, 진단을 말할 수 없습니다.</li></ul></section>
+    <section class="participant-result-section next-result"><h3>다음에 할 일</h3><p>${pending ? '검사자가 연구자용 자동 분석을 실행하고 원음성과 결과가 맞는지 확인합니다.' : '검사자가 문항별 근거와 원음성을 확인합니다. 일상에서 읽기 어려움이 계속되면 이 기록을 가지고 읽기 전문가와 상의하세요.'}</p></section>
+    <p class="participant-limit">이 결과는 연구용 원자료입니다. 의료·교육 진단이나 등급이 아닙니다.</p>`;
 }
 
 const median = values => {
@@ -101,20 +182,22 @@ function decodingStats(session) {
 
 function fluencyStats(session) {
   const fluency = scoredResponses(session).filter(response => response.module === 'fluency');
-  const passages = fluency.map(response => {
+  const summarize = response => {
     const final = USABLE.includes(response.adjudication?.status) ? response.adjudication.finalRating : null;
     if (!final) return { response, final: null };
     const tokens = S.tokenizePassage(response.target);
     const metrics = S.computeFluency({ tokens, marks: final.marks, lastIndex: final.lastIndex, sixtyIndex: final.sixtyIndex, onsetMs: final.onsetMs, endMs: final.speechEndMs });
     return { response, final, tokens, metrics, pauses: (response.machineAnalysis?.pauses || []).length };
-  });
+  };
+  const timedWordLists = fluency.filter(response => response.taskType === 'timed-word-list').map(summarize);
+  const passages = fluency.filter(response => response.taskType !== 'timed-word-list').map(summarize);
   const done = passages.filter(passage => passage.final);
   const sum = key => done.reduce((total, passage) => total + (passage.metrics[key] || 0), 0);
   const seconds = done.reduce((total, passage) => total + (passage.metrics.readingSeconds || 0), 0);
   const events = {};
   for (const passage of done) for (const [name, count] of Object.entries(passage.metrics.events)) events[name] = (events[name] || 0) + count;
   return {
-    passages, done, events,
+    passages, timedWordLists, done, events,
     accuracyEojeol: sum('attemptedEojeol') ? +(sum('correctEojeol') / sum('attemptedEojeol') * 100).toFixed(1) : null,
     accuracySyllable: sum('attemptedSyllables') ? +(sum('correctSyllables') / sum('attemptedSyllables') * 100).toFixed(1) : null,
     eojeolPerMin: seconds ? +(sum('correctEojeol') / seconds * 60).toFixed(1) : null,
@@ -140,6 +223,8 @@ function summarySentences(d, f) {
     const top = Object.entries(f.events).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([name, count]) => `${name} ${count}`).join(', ');
     if (top) lines.push(`유창성에서 기록된 주요 사건: ${top}.`);
   } else lines.push('읽기 유창성: 자동 채점된 지문이 아직 없습니다.');
+  const wordList = f.timedWordLists.find(entry => entry.final);
+  if (wordList) lines.push(`45초 낱말 읽기 후보: 정확히 읽은 낱말 ${wordList.metrics.correctEojeol}개. 국내 연령 규준이 없어 원점수만 기록합니다.`);
   return lines;
 }
 
@@ -312,7 +397,7 @@ function screeningLinkRows(session, d, f) {
     }
     if (item.module === 'fluency' && f.done.length) {
       if (item.key === 'accuracy') { detail = `어절 정확도 ${f.accuracyEojeol}%`; verdict = f.accuracyEojeol < S.SCREENING_CONFIG.sentenceMinAccuracy ? '확인됨' : '세부검사 지문에서는 기준 이상'; }
-      if (item.key === 'rate') { const floor = decision.measures.rateFloor; detail = `분당 정확 음절 ${f.syllablesPerMin} (임시 기준 ${floor}) · 긴 멈춤 ${f.events['긴 멈춤'] || 0} · 반복 ${f.events['반복'] || 0}`; verdict = f.syllablesPerMin < floor ? '확인됨' : '세부검사 지문에서는 기준 이상'; }
+      if (item.key === 'rate') { detail = `분당 정확 음절 ${f.syllablesPerMin} · 긴 멈춤 ${f.events['긴 멈춤'] || 0} · 반복 ${f.events['반복'] || 0}`; verdict = '연령 규준 전이라 속도 판정 보류'; }
     }
     return `<tr><td><b>${esc(item.label)}</b><br><span class="quiet">${item.module === 'decoding' ? 'A 단어 해독' : 'B 유창성'}</span></td><td>${esc(item.reason)}</td><td>${esc(detail)}</td><td><b>${esc(verdict)}</b></td></tr>`;
   }).join('');
@@ -382,31 +467,16 @@ function choiceStats(session) {
     wordRt: medianOf(words.filter(answer => answer.correct).map(answer => answer.rtMs)), nonwordRt: medianOf(non.filter(answer => answer.correct).map(answer => answer.rtMs)), timeouts: lex.filter(answer => answer.noResponse).length } : null;
   const silentInfo = session.choiceSections?.['B-silent'];
   const silent = bySubtest['B-silent'] ? { ...bySubtest['B-silent'], limit: silentInfo?.timeLimitSec, timedOut: Boolean(silentInfo?.timedOut), total: silentInfo?.items } : null;
-  const modules = {};
-  for (const module of CHOICE_SCOPES) { const list = validAnswers.filter(answer => answer.module === module); if (list.length) modules[module] = S.choiceSummary(list); }
-  return { answers, validAnswers, invalidAnswers, bySubtest, lexical, silent, modules };
-}
-
-function technicalSpecHtml(session) {
-  const spec = window.AssessmentSpec;
-  const summary = spec.presentationSummary(session);
-  const environment = session.environment || session.deviceMetadata || {};
-  const viewport = environment.viewport || {};
-  const voice = session.ttsProfile?.voice;
-  const connectivity = environment.online == null ? '상태 미기록' : environment.online ? '온라인' : '오프라인';
-  return `<div class="report-grid four">
-    <div><small>검사 사양</small><b>${esc(session.assessmentSpecVersion || '기록 없음')}</b></div>
-    <div><small>화면·배율</small><b>${viewport.width && viewport.height ? `${viewport.width}×${viewport.height}` : '기록 없음'} · DPR ${environment.devicePixelRatio ?? '–'} · scale ${viewport.scale ?? '–'}</b></div>
-    <div><small>음성 제시</small><b>${voice ? `${esc(voice.name)} · rate ${session.ttsProfile.rate}` : '사용 안 함/기록 없음'}</b></div>
-    <div><small>제시 품질</small><b>점수 제외 ${summary.invalidItems}문항 · TTS 실패 ${summary.ttsFailures}회</b></div>
-  </div>
-  <div class="table-wrap spaced"><table class="item-table"><thead><tr><th>환경</th><th>자극 시간</th><th>TTS</th><th>재현 정보</th></tr></thead><tbody><tr>
-    <td>${esc(environment.platform || 'unknown')} · ${environment.webgpu ? 'WebGPU' : 'CPU/WASM 후보'} · ${connectivity}</td>
-    <td>계측 ${summary.timedItems}문항 · 최대 지연 ${summary.maxLateDriftMs ?? '–'}ms · 허용 +${spec.PRESENTATION.exposureToleranceMs}ms</td>
-    <td>재생 ${summary.ttsPlays}회 · 중앙 ${summary.medianTtsWpm ?? '–'} WPM · 상태 ${esc(session.ttsProfile?.status || '–')}</td>
-    <td>앱 ${esc(session.appVersion || '세션 내 미기록')} · 문항 ${esc(session.formVersion || '–')} · 배터리 ${esc(session.batteryVersion || '–')}</td>
-  </tr></tbody></table></div>
-  ${summary.invalidItems ? `<p class="notice warning"><b>제시 품질로 점수에서 제외한 문항 ${summary.invalidItems}개:</b> 응답은 근거 추적에 보존하지만 정확도·반응시간 집계에는 넣지 않았습니다.</p>` : '<p class="quiet">기록된 제시 품질 실패가 없습니다. 이는 문항·규준 타당화가 끝났다는 뜻이 아닙니다.</p>'}`;
+  const modules = {}, modulesCore = {}, modulesResearch = {};
+  for (const module of CHOICE_SCOPES) {
+    const list = validAnswers.filter(answer => answer.module === module);
+    const core = list.filter(answer => assessmentRoleForSubtest(answer.subtest) === 'core');
+    const research = list.filter(answer => assessmentRoleForSubtest(answer.subtest) === 'research');
+    if (list.length) modules[module] = S.choiceSummary(list);
+    if (core.length) modulesCore[module] = S.choiceSummary(core);
+    if (research.length) modulesResearch[module] = S.choiceSummary(research);
+  }
+  return { answers, validAnswers, invalidAnswers, bySubtest, lexical, silent, modules, modulesCore, modulesResearch };
 }
 
 function choiceTableHtml(c, modules) {
@@ -438,19 +508,22 @@ function choiceFindings(c, module) {
   }
   if (module === 'silent') {
     if (c.lexical) list.push(finding('단어 재인: 민감도', `실제단어를 ‘진짜’로 고른 비율 ${Math.round(c.lexical.hitRate * 100)}% · 비단어를 ‘진짜’로 잘못 고른 비율 ${Math.round(c.lexical.falseAlarmRate * 100)}% · d′ = ${c.lexical.dPrime} · 정답 반응 시간 실제단어 ${c.lexical.wordRt != null ? (c.lexical.wordRt / 1000).toFixed(2) : '–'}초, 비단어 ${c.lexical.nonwordRt != null ? (c.lexical.nonwordRt / 1000).toFixed(2) : '–'}초`,
-      'd′는 “모두 진짜”처럼 한쪽으로 답하는 경향을 빼고 실제단어와 비단어를 구별하는 능력만 나타냅니다(0이면 구별 못 함). 소리 내지 않고 단어를 빠르게 알아보는 자동 재인의 지표입니다.', `${REFS.roar}; ${REFS.sdt}`));
+      'd′는 “모두 진짜”처럼 한쪽으로 답하는 경향을 뺀 탐색 지표입니다. 이 한국어 후보에는 규준이 없으므로 핵심 읽기 수준이나 의뢰 기준으로 해석하지 않습니다.', `${REFS.roar}; ${REFS.sdt}; 디지털 연구 확장`));
     if (c.silent) list.push(finding('묵독 효율', `${c.silent.limit}초 동안 ${c.silent.n}문장 판단 · 정답 ${c.silent.correct} · 오답 ${c.silent.incorrect} · 효율 점수 ${c.silent.efficiency}${c.silent.timedOut ? '' : ' · 제한 시간 전에 모두 완료'}`,
-      '효율 점수(정답 − 오답)는 TOSREC의 채점 방식으로, 빨리 읽으면서 이해도 하는지를 함께 봅니다. 마구 눌러 맞힌 점수를 오답으로 상쇄합니다. 한국어 규준이 없어 원점수만 보고합니다.', REFS.tosrec));
+      '효율 점수(정답 − 오답)는 TOSREC 계열 형식을 따른 탐색값입니다. 한국어 규준과 구성개념 동등성이 확인되지 않아 핵심 점수와 합치지 않습니다.', `${REFS.tosrec}; 디지털 연구 확장`));
   }
   if (module === 'language') {
     for (const id of ['C-vocab', 'C-sentence', 'C-listen', 'C-morph']) if (r(id)) list.push(finding(CHOICE_SUBTEST_TITLES[id], `${typeLine(id)}${wrongItems(id).length ? ` · 틀린 문항: ${wrongItems(id).slice(0, 4).join(' / ')}` : ''}`,
-      { 'C-vocab': '어휘는 기초 → 학습 → 고급 순서로 배치했습니다. 어느 수준부터 틀리는지가 어휘 지식의 범위를 보여 줍니다.', 'C-sentence': '문장은 화면에 보이지 않고 듣기만 하므로 해독과 무관한 문법 구조 이해를 봅니다. 피동·사동·관형절처럼 어순만으로 풀 수 없는 구조에서의 오류를 확인하세요.', 'C-listen': '듣기 이해는 해독 부담이 없는 언어이해 지표입니다. 글 이해(D)와 함께 보면 이해 어려움이 해독 때문인지 언어이해 때문인지 가를 수 있습니다.', 'C-morph': '같은 글자가 다른 뜻으로 쓰이는 경우(동음 형태소)를 구별하는 과제입니다. 한국어는 한자어 형태소가 많아 어휘 학습과 관련됩니다.' }[id],
-      { 'C-vocab': REFS.svr, 'C-sentence': REFS.svr, 'C-listen': REFS.svr, 'C-morph': 'Carlisle (2000); 한국어 형태 인식 연구' }[id], r(id).pct < CHOICE_REFER_PCT ? 'attention' : 'info'));
+      { 'C-vocab': '어휘는 기초 → 학습 → 고급 순서로 배치했습니다. 어느 수준부터 틀리는지가 어휘 지식의 범위를 보여 줍니다.', 'C-sentence': '문장은 화면에 보이지 않고 듣기만 하므로 해독과 무관한 문법 구조 이해를 봅니다. 피동·사동·관형절처럼 어순만으로 풀 수 없는 구조에서의 오류를 확인하세요.', 'C-listen': '듣기 이해는 해독 부담이 없는 언어이해 지표입니다. 글 이해(D)와 함께 보면 이해 어려움이 해독 때문인지 언어이해 때문인지 가를 수 있습니다.', 'C-morph': '형태소 인식은 한국어 읽기와 관련되지만 이 후보는 연령 규준과 증분타당도가 확인되지 않았습니다. 핵심 언어이해 점수와 합치지 않는 심화 탐색값입니다.' }[id],
+      { 'C-vocab': REFS.svr, 'C-sentence': REFS.svr, 'C-listen': REFS.svr, 'C-morph': 'Cho 외 (2008, 2011); 형태소 연구 확장' }[id], id === 'C-morph' ? 'info' : r(id).pct < CHOICE_REFER_PCT ? 'attention' : 'info'));
   }
   if (module === 'comprehension') {
-    const parts = ['D-fact', 'D-infer', 'D-eval', 'D-multi'].filter(r).map(id => `${CHOICE_SUBTEST_TITLES[id]} ${r(id).correct}/${r(id).n}`);
-    if (parts.length) list.push(finding('이해 과정별 정답', parts.join(' · '),
-      '사실 → 추론 → 평가 → 복수 글 통합 순서로 요구 수준이 높아집니다. 사실 문항은 맞히고 추론·평가에서 틀리면 글에 드러나지 않은 연결을 만드는 데 어려움이 있다는 가설을 세울 수 있습니다. 과정별 문항이 2~4개라 차이는 방향만 참고하세요.', `${REFS.pirls}; ${REFS.pisa}`));
+    const coreParts = ['D-fact', 'D-infer'].filter(r).map(id => `${CHOICE_SUBTEST_TITLES[id]} ${r(id).correct}/${r(id).n}`);
+    const researchParts = ['D-eval', 'D-multi'].filter(r).map(id => `${CHOICE_SUBTEST_TITLES[id]} ${r(id).correct}/${r(id).n}`);
+    if (coreParts.length) list.push(finding('핵심 후보 이해 과정', coreParts.join(' · '),
+      '사실 정보 찾기와 직접 추론을 구분해 봅니다. 과정별 문항 수가 적어 차이는 방향만 참고합니다.', REFS.pirls));
+    if (researchParts.length) list.push(finding('고차 문해 연구 확장', researchParts.join(' · '),
+      '평가·복수 글 통합은 중요한 읽기 과정이지만 연령과 문항 난이도 동등화 전에는 핵심 총점과 분리해 탐색합니다.', `${REFS.pirls}; ${REFS.pisa}; 고차 문해 연구 확장`));
   }
   return list;
 }
@@ -479,7 +552,7 @@ function choiceTraceHtml(c, module) {
 }
 
 function choiceNextStep(c, modules) {
-  const low = Object.entries(c.bySubtest).filter(([id, r]) => modules.some(module => r.answers[0]?.module === module) && r.pct < CHOICE_REFER_PCT);
+  const low = Object.entries(c.bySubtest).filter(([id, r]) => assessmentRoleForSubtest(id) === 'core' && modules.some(module => r.answers[0]?.module === module) && r.pct < CHOICE_REFER_PCT);
   if (!low.length) return `<div class="next-step"><p><b>이번 검사 범위에서는 뚜렷한 어려움 신호가 보이지 않았습니다.</b></p><p class="quiet">그래도 어려움을 느낀다면 전문가의 대면 심층 검사를 받아 볼 수 있습니다.</p></div>`;
   return `<div class="next-step"><p><b>다음 영역은 대면 심층 검사에서 더 자세히 확인해 보기를 권합니다.</b></p><ul class="summary-list">${low.map(([id, r]) => `<li>${esc(CHOICE_SUBTEST_TITLES[id])}: 정확도 ${r.pct}% (임시 기준 ${CHOICE_REFER_PCT}% 미만)</li>`).join('')}</ul><p class="quiet">기준은 검증 전 임시값이며 진단 기준이 아닙니다.</p></div>`;
 }
@@ -488,25 +561,38 @@ const CHOICE_LIMITS = ['<li><b>문항:</b> 과제 형식은 공인 검사를 따
   '<li><b>규준 없음:</b> 연령 규준이 없어 백분위·표준점수를 제공하지 않습니다. 추가 확인 권고 기준(70%)은 임시값입니다.</li>',
   '<li><b>우연 정답:</b> 선택형은 찍어서 맞힐 수 있습니다(2지선다 50%, 4지선다 25%). 결과표에 우연 정답률을 함께 적었습니다.</li>',
   '<li><b>합성 음성:</b> 한 세션 안에서는 선택한 한국어 음성을 고정하고 음성명·속도·재생시간을 기록하지만, 기기 사이에 같은 음성을 보장하지 못하는 잠정 방식입니다. 표준화 전 고정 음성 자산 또는 검증된 고정 엔진이 필요합니다.</li>',
-  '<li><b>형식 차이:</b> 단어 재인은 ROAR처럼 350ms 노출을 썼지만, 묵독 효율의 데모 분량(90초)은 TOSREC(3분)보다 짧습니다. ROAR 기술 매뉴얼은 90초로 줄여도 신뢰도·타당도 변화가 매우 작다고 보고했으나 한국어에서는 확인되지 않았습니다.</li>',
+  '<li><b>연구 확장 분리:</b> ROAR식 350ms 단어·비단어 판단, TOSREC식 문장 참·거짓, 형태소 인식, 고차 문해 과제는 한국어 규준 핵심검사가 아닙니다. 연구자가 선택한 경우에만 실시하고 핵심 점수·의뢰 판단과 분리합니다.</li>',
   '<li><b>읽기 부담:</b> 듣기 과제(A, C)도 보기는 글자로 제시되어 보기를 읽는 능력이 일부 섞입니다. 어린 아동용은 그림 보기로 바꾸는 것이 바람직합니다.</li>',
   '<li><b>판정 보류:</b> 연령 규준이 생기기 전이라 난독 위험 판정을 보류했습니다. 규준이 생기면 표준점수로 위험 여부를 판정하고, 진단은 전문가의 종합 평가로 확정합니다.</li>'];
+
+function supportExperimentHtml(session) {
+  const experiment = session.supportExperiment;
+  if (!experiment?.trials?.length) return '';
+  const labels = { L0: 'L0 무도움', L1: 'L1 시각 단서', L2: 'L2 분절·음성' };
+  const rows = experiment.trials.map(trial => `<tr><td>${esc(labels[trial.condition] || trial.condition)}</td><td>${esc(trial.formId)}</td><td>${trial.correct ? '정답' : '오답'}</td><td>${trial.rtMs != null ? `${(trial.rtMs / 1000).toFixed(2)}초` : '–'}</td><td>${trial.audioPlays || 0}회</td><td>${esc(trial.scorePolicy || 'EXPLORATORY_SEPARATE')}</td></tr>`).join('');
+  const l0 = experiment.trials.find(trial => trial.condition === 'L0');
+  const supported = experiment.trials.filter(trial => trial.condition !== 'L0');
+  const description = l0 && supported.length ? `L0 ${l0.correct ? '정답' : '오답'} · 지원 조건 ${supported.filter(trial => trial.correct).length}/${supported.length} 정답` : '조건별 자료 수집 중';
+  return `<div class="overall"><p><b>지원 반응 기술:</b> ${description}</p></div><div class="table-wrap"><table class="item-table"><thead><tr><th>조건</th><th>동형 후보</th><th>결과</th><th>반응 시간</th><th>음성 도움</th><th>점수 정책</th></tr></thead><tbody>${rows}</tbody></table></div><p class="notice warning">L0/L1/L2는 서로 다른 동형 후보를 사용하고 조건·문항 순서를 참여자 코드로 균형화했습니다. 아직 문항 동형성이 검증되지 않았으므로 변화량은 탐색 자료이며 기본 글 이해 점수·규준점수에 합치지 않습니다.</p>`;
+}
 
 function drawChoiceReport(original, scope) {
   const session = original;
   const c = choiceStats(session);
   const info = CHOICE_MODULES[scope];
   const date = new Date(session.startedAt || session.createdAt).toLocaleDateString('ko-KR');
-  const r = c.modules[scope];
+  const r = c.modulesCore[scope];
+  const research = c.modulesResearch[scope];
   const sections = [];
   const add = (title, html, cls = '') => sections.push({ title, html, cls });
   add('검사 정보', `<div class="report-grid four"><div><small>실시 방식 · 모듈</small><b>${session.mode === 'module' ? '모듈별 검사' : '전체 흐름'} · ${esc(info.title)}</b></div><div><small>채점 방식</small><b>응답 즉시 자동 채점 (녹음 없음)</b></div><div><small>검사 분량</small><b>${session.length === 'full' ? '전체' : '데모'}</b></div><div><small>문항 버전</small><b>${esc(session.batteryVersion || BATTERY_VERSION)}</b></div></div>`);
-  add('제시 품질과 기술 사양', technicalSpecHtml(session));
-  add('핵심 요약', r ? `<div class="overall"><p>${esc(info.title)} 전체 정답 ${r.correct}/${r.n} (${r.pct}%, ${ciText(r.correct, r.n)}).</p></div>${findingsHtml(choiceFindings(c, scope), '분석')}` : '<p class="quiet">이 기록에는 이 모듈의 응답이 없습니다.</p>');
+  add('제시 품질', `<p>점수에 포함된 문항 ${c.validAnswers.length}개 · 제시시간 문제로 제외 ${c.invalidAnswers.length}개</p><p class="quiet">장치·모델·TTS 같은 구현 사양은 참여자 결과와 분리한 v0.8 기술 사양서에서 관리합니다.</p>`);
+  add('핵심·연구 확장 분리 요약', `${r ? `<div class="overall"><p><b>핵심 후보</b> 정답 ${r.correct}/${r.n} (${r.pct}%, ${ciText(r.correct, r.n)}).</p></div>` : '<p class="quiet">이 기록에는 이 모듈의 핵심 후보 응답이 없습니다.</p>'}${research ? `<div class="notice warning"><b>연구 확장 · 별도 해석</b><br>정답 ${research.correct}/${research.n} (${research.pct}%). 이 값은 핵심 점수와 합치거나 의뢰 기준에 사용하지 않습니다.</div>` : ''}${findingsHtml(choiceFindings(c, scope), '분석')}`);
   add('하위검사 결과', choiceTableHtml(c, [scope]));
   add('문항별 근거 추적', choiceTraceHtml(c, scope));
+  if (scope === 'comprehension' && session.supportExperiment?.trials?.length) add('지원 반응 · L0/L1/L2', supportExperimentHtml(session));
   add('규준 위치 *', `<div class="report-grid three"><div><small>표준점수</small><b>${blank}</b></div><div><small>백분위</small><b>${blank}</b></div><div><small>필요 지원 수준</small><b>${blank}</b></div></div><p class="quiet">대표 표본 규준과 신뢰도·타당도 자료가 없어 제공하지 않습니다.</p>`, 'muted-layer');
-  add('다음 단계 안내', choiceNextStep(c, [scope]));
+  add('다음 단계 안내', r ? choiceNextStep(c, [scope]) : '<p class="notice warning"><b>이 모듈은 연구 확장 결과만 있습니다.</b> 핵심 점수나 추가 검사 의뢰 판단에 사용하지 않습니다.</p>');
   add('이 결과의 한계', `<ul class="summary-list limits">${CHOICE_LIMITS.join('')}</ul>`);
   $('#report-content').innerHTML = `
   <header class="report-head">
@@ -536,9 +622,7 @@ function nextStepHtml(session, d, f, showD, showF) {
   const reasons = [];
   if (showD && d.all.n && d.all.pct < DECODING_REFER_PCT) reasons.push(`단어 해독 정확도 ${d.all.pct}% (임시 기준 ${DECODING_REFER_PCT}% 미만)`);
   if (showD && d.spellingReads) reasons.push(`음운변동 낱말을 표기대로 읽음 ${d.spellingReads}문항`);
-  const floor = S.SCREENING_CONFIG.sentenceMinRate[session.ageBand] ?? S.SCREENING_CONFIG.sentenceMinRate['성인'];
   if (showF && f.done.length && f.accuracyEojeol < S.SCREENING_CONFIG.sentenceMinAccuracy) reasons.push(`낭독 정확도 ${f.accuracyEojeol}% (임시 기준 ${S.SCREENING_CONFIG.sentenceMinAccuracy}% 미만)`);
-  if (showF && f.done.length && f.syllablesPerMin < floor) reasons.push(`분당 정확 음절 ${f.syllablesPerMin} (${session.ageBand} 임시 기준 ${floor} 미만)`);
   const scored = (showD ? d.all.n : 0) + (showF ? f.done.length : 0);
   if (!scored) return '<p class="quiet">자동 채점이 끝나면 다음 단계를 안내합니다.</p>';
   return reasons.length
@@ -567,6 +651,10 @@ function drawReport(original, scope = 'all') {
       case 'A-real': return d.real.n ? `${d.real.hit}/${d.real.n} (${d.real.pct}%)` : blank;
       case 'A-nonword': return d.nonword.n ? `${d.nonword.hit}/${d.nonword.n} (${d.nonword.pct}%)` : blank;
       case 'A-rule': return d.consistent.n || d.phonological.n ? `일치 ${d.consistent.pct ?? '–'}% · 음운변동 ${d.phonological.pct ?? '–'}%` : blank;
+      case 'B-word-efficiency': {
+        const wordList = f.timedWordLists.find(entry => entry.final);
+        return wordList ? `45초 정확 낱말 ${wordList.metrics.correctEojeol}개 (규준 없음)` : blank;
+      }
       case 'B-oral': return f.done.length ? `정확도 ${f.accuracyEojeol}% · 분당 정확 음절 ${f.syllablesPerMin}` : blank;
       case 'B-error': return f.done.length ? Object.entries(f.events).map(([name, count]) => `${name} ${count}`).join(', ') || '오류 없음' : blank;
       case 'B-rule': return rs.rule.n ? `규칙 필요 어절 오류 ${rs.rule.err}/${rs.rule.n} · 그 밖의 어절 오류 ${rs.plain.err}/${rs.plain.n}` : d.phonological.n ? `음운변동 문항 오류 ${d.phonological.n - d.phonological.hit} · 표기대로 읽음 ${d.spellingReads}` : blank;
@@ -579,7 +667,13 @@ function drawReport(original, scope = 'all') {
       }
     }
   };
-  const subtestRows = PLATFORM_PATHS.flatMap(path => path.subtests.map(subtest => `<tr class="${subtest.status === 'core' ? '' : 'dim-row'}"><td>${path.id}</td><td>${esc(subtest.title)}</td><td>${esc(subtest.measure)}</td><td>${subtestResult(subtest)}</td><td>${subtest.status === 'core' ? '<span class="tag core">실시·채점</span>' : `<span class="tag ${previewed.has(subtest.id) ? 'preview' : 'off'}">${previewed.has(subtest.id) ? '화면만 진행' : '미실시'}</span>`}</td></tr>`)).join('');
+  const subtestRows = PLATFORM_PATHS.flatMap(path => path.subtests.map(subtest => {
+    const answered = Boolean(c.bySubtest[subtest.id]);
+    const status = subtest.status === 'core' ? '<span class="tag core">핵심 후보</span>'
+      : subtest.status === 'research' ? `<span class="tag ${answered ? 'preview' : 'off'}">${answered ? '연구 확장 · 별도 결과' : '연구 확장 · 미실시'}</span>`
+        : `<span class="tag ${previewed.has(subtest.id) ? 'preview' : 'off'}">${previewed.has(subtest.id) ? '화면만 진행' : '미실시'}</span>`;
+    return `<tr class="${subtest.status === 'core' ? '' : 'dim-row'}"><td>${path.id}</td><td>${esc(subtest.title)}</td><td>${esc(subtest.measure)}</td><td>${subtestResult(subtest)}</td><td>${status}</td></tr>`;
+  })).join('');
 
   const eventBars = (events, total) => {
     const entries = Object.entries(events).sort((x, y) => y[1] - x[1]);
@@ -605,20 +699,40 @@ function drawReport(original, scope = 'all') {
         <h4>대치된 자리 (음절 안 위치)</h4><div class="bars">${positionTotal ? `${barRow('초성', d.positions.cho, { max: positionTotal, unit: '회' })}${barRow('중성', d.positions.jung, { max: positionTotal, unit: '회' })}${barRow('받침', d.positions.jong, { max: positionTotal, unit: '회' })}${barRow('음절 생략·삽입', d.positions.whole, { max: positionTotal, unit: '회' })}` : '<p class="quiet">기록된 위치 없음</p>'}</div></div>`;
   const fluencyErrors = `<div><h4>읽기 유창성 오류·사건</h4><div class="bars">${eventBars(f.events)}</div></div>`;
   const latency = `<div><h4>단어 해독 반응 시작 시간 (중앙값)</h4><div class="bars">${[['실제·일치', d.cell('real', 'consistent')], ['실제·음운변동', d.cell('real', 'phonological')], ['비단어·일치', d.cell('nonword', 'consistent')], ['비단어·음운변동', d.cell('nonword', 'phonological')]].map(([label, c]) => barRow(label, c.latency != null ? +(c.latency / 1000).toFixed(2) : null, { max: 4, unit: '초', empty: c.latency == null, emptyText: c.n ? '— 발화 미탐지' : '— 확정 문항 없음' })).join('')}</div><p class="quiet">머뭇거림 창(${S.SCORING_CONFIG.hesitationWindowMs / 1000}초) 초과 ${d.hesitations}문항. 탐색 지표이며 해석 기준은 아직 없습니다.</p></div>`;
-  const fluencyTable = `<div><h4>읽기 유창성 정확도와 속도</h4><div class="table-wrap"><table class="item-table"><thead><tr><th>지문</th><th>낭독</th><th>정확도</th><th>분당 정확 어절</th><th>분당 정확 음절</th><th>첫 60초</th><th>긴 멈춤</th></tr></thead><tbody>${f.passages.map(passage => passage.final ? `<tr><td>${esc(passage.response.stimulusId)}</td><td>${passage.metrics.readingSeconds}초</td><td>${passage.metrics.accuracyEojeol}%</td><td>${passage.metrics.correctEojeolPerMin}</td><td>${passage.metrics.correctSyllablesPerMin}</td><td>${passage.metrics.first60.correctEojeol}어절</td><td>${passage.pauses}회</td></tr>` : `<tr><td>${esc(passage.response.stimulusId)}</td><td colspan="6" class="quiet">${adjudicationLabel(passage.response.adjudication?.status)}</td></tr>`).join('')}</tbody></table></div></div>`;
-  const fluencyRows = f.passages.map(passage => `<tr><td>${esc(passage.response.stimulusId)}</td><td>${esc(passage.response.kind || '')}</td><td>${passage.final ? `${passage.metrics.correctEojeol}/${passage.metrics.attemptedEojeol}어절` : '–'}</td><td>${passage.final ? Object.entries(passage.metrics.events).map(([k, v]) => `${k} ${v}`).join(', ') || '오류 없음' : '–'}</td><td>${passage.response.audioKey ? '있음' : '없음'}</td><td>${adjudicationLabel(passage.response.adjudication?.status)}</td></tr>`).join('');
+  const wordEfficiencyRows = f.timedWordLists.map(entry => entry.final
+    ? `<tr><td>${esc(entry.response.formId || '–')}</td><td>${entry.response.timeLimitSec || 45}초</td><td>${entry.response.presentation?.timing?.actualMs != null ? `${(entry.response.presentation.timing.actualMs / 1000).toFixed(3)}초 (${entry.response.presentation.timing.driftMs >= 0 ? '+' : ''}${entry.response.presentation.timing.driftMs}ms)` : '–'}</td><td>${entry.metrics.correctEojeol}개</td><td>${entry.metrics.attemptedEojeol}개</td><td>${entry.response.presentation?.valid ? '유효 · 규준 없음' : `무효 · ${esc(entry.response.presentation?.status || '조건 불충족')}`}</td></tr>`
+    : `<tr><td>${esc(entry.response.formId || '–')}</td><td>${entry.response.timeLimitSec || 45}초</td><td>${entry.response.presentation?.timing?.actualMs != null ? `${(entry.response.presentation.timing.actualMs / 1000).toFixed(3)}초` : '–'}</td><td colspan="3" class="quiet">${adjudicationLabel(entry.response.adjudication?.status)} · ${esc(entry.response.presentation?.status || '')}</td></tr>`).join('');
+  const wordEfficiencyTable = f.timedWordLists.length ? `<div><h4>시간제한 낱말 읽기 후보</h4><div class="table-wrap"><table class="item-table"><thead><tr><th>목록형</th><th>목표</th><th>실측·오차</th><th>정확 낱말</th><th>시도 낱말</th><th>제시 유효성</th></tr></thead><tbody>${wordEfficiencyRows}</tbody></table></div></div>` : '';
+  const fluencyTable = `<div><h4>연결글 읽기 정확도와 속도</h4><div class="table-wrap"><table class="item-table"><thead><tr><th>지문</th><th>낭독</th><th>정확도</th><th>분당 정확 어절</th><th>분당 정확 음절</th><th>첫 60초</th><th>긴 멈춤</th></tr></thead><tbody>${f.passages.map(passage => passage.final ? `<tr><td>${esc(passage.response.stimulusId)}</td><td>${passage.metrics.readingSeconds}초</td><td>${passage.metrics.accuracyEojeol}%</td><td>${passage.metrics.correctEojeolPerMin}</td><td>${passage.metrics.correctSyllablesPerMin}</td><td>${passage.metrics.first60.correctEojeol}어절</td><td>${passage.pauses}회</td></tr>` : `<tr><td>${esc(passage.response.stimulusId)}</td><td colspan="6" class="quiet">${adjudicationLabel(passage.response.adjudication?.status)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  const fluencyRows = [...f.timedWordLists, ...f.passages].map(passage => `<tr><td>${esc(passage.response.stimulusId)}</td><td>${esc(passage.response.kind || '')}</td><td>${passage.final ? `${passage.metrics.correctEojeol}/${passage.metrics.attemptedEojeol}낱말·어절` : '–'}</td><td>${passage.final ? Object.entries(passage.metrics.events).map(([k, v]) => `${k} ${v}`).join(', ') || '오류 없음' : '–'}</td><td>${passage.response.audioKey ? '있음' : '없음'}</td><td>${adjudicationLabel(passage.response.adjudication?.status)}</td></tr>`).join('');
   const verifyRows = `${showD ? agreementRow('자동 채점 ↔ 사람 검증 · 해독 정오', verify.decoding, '문항') : ''}${showF ? agreementRow('자동 채점 ↔ 사람 검증 · 유창성 어절 정오', verify.fluency, '어절') : ''}`;
-  const hasVerify = (showD && verify.decoding.n) || (showF && verify.fluency.n);
+  const benchmark = verify.benchmark;
+  const hasVerify = Boolean((showD && verify.decoding.n) || (showF && verify.fluency.n) || benchmark.n);
   const reliabilityScoped = reliabilityFindings(verify).filter(item => (showD || !item.title.includes('해독')) && (showF || !item.title.includes('유창성')));
   const dFind = decodingFindings(d), fFind = fluencyFindings(f);
 
   const sections = [];
   const add = (title, html, cls = '') => sections.push({ title, html, cls });
+  const sectionAudits = Object.values(original.choiceSections || {}).map(section => section.evidenceAudit).filter(Boolean);
+  const flaggedChoiceItems = sectionAudits.flatMap(audit => audit.flaggedItems || []);
+  const nonwordAudits = Object.values(window.ReadingItemBank?.A_NONWORD_AUDITS || {});
+  const wordFeatures = Object.values(window.ReadingItemBank?.A_WORD_FEATURES || {});
+  const observedWordFrequencies = wordFeatures.filter(feature => feature.corpusFrequencyStatus === 'OBSERVED').length;
+  const nonwordPending = nonwordAudits.filter(audit => audit.flags?.includes('PHONOTACTIC_PROBABILITY_PENDING')).length;
+  const nonwordProxy = nonwordAudits.filter(audit => audit.flags?.includes('ORTHOGRAPHIC_BIGRAM_PROXY_ONLY')).length;
+  const timedPresentation = scoredResponses(original).find(response => response.taskType === 'timed-word-list')?.presentation;
   add('검사 품질과 기본 정보', `
     <div class="report-grid four"><div><small>실시 방식 · 모듈</small><b>${session.mode === 'module' ? '모듈별 검사' : '전체 흐름'} · ${session.modules.map(moduleName).join(', ') || '–'}</b></div><div><small>채점 방식</small><b>자동 채점 · ${esc(session.sttModelLabel || '음성인식')}</b></div><div><small>채점 반영 / 전체 (무효 음성)</small><b>${(showD ? d.usable.length : 0) + (showF ? f.done.length : 0)} / ${(showD ? d.decoding.length : 0) + (showF ? f.passages.length : 0)} (${d.invalid.length + (showF ? f.passages.filter(p => p.response.adjudication?.status === 'INVALID_AUDIO').length : 0)})</b></div><div><small>장치 점검</small><b>${esc(session.deviceCheck?.quality?.flags?.join(', ') || (session.demo ? '예시 자료' : '기록 없음'))}</b></div></div>
-    ${technicalSpecHtml(original)}
+    <p class="quiet">장치·모델·TTS 같은 구현 사양은 결과 해석과 분리한 v0.15 근거 행렬과 v0.8 기술 사양서에서 관리합니다.</p>
     ${full && session.screening?.decision ? `<h4>선별 결과와 경로</h4>${screeningSummaryHtml(session.screening)}${session.routing && (session.routing.added.length || session.routing.removed.length) ? `<p class="notice">추천 경로 조정: 추가 ${esc(session.routing.added.join(', ') || '없음')} · 제외 ${esc(session.routing.removed.join(', ') || '없음')}</p>` : ''}` : ''}
     <p class="quiet">버전: 검사 사양 ${esc(session.assessmentSpecVersion || 'legacy')} · 문항 ${esc(session.formVersion)} · 채점 ${esc(S.AUTO_SCORING_VERSION)} · 발음 목록 ${esc(session.pronunciationDictVersion || '–')} · 음성인식 ${esc(session.sttModelVersion || 'not-run')} · 설정 ${esc(S.SCORING_CONFIG.version)}${showD ? ` · 문항 순서 ${session.orderPolicy === 'random' ? '무작위' : '고정'}` : ''}${full ? ` · 선별 규칙 ${esc(session.screening?.decision?.ruleVersion || '–')}` : ''}</p>`);
+  add('디지털 근거·제시 품질 감사', `<div class="table-wrap"><table class="item-table"><thead><tr><th>대상</th><th>자동 확인</th><th>상태</th><th>한계</th></tr></thead><tbody>
+    <tr><td>A 실제단어</td><td>국립국어원 등급·품사·어종 + KoFREN 자발화 빈도</td><td>${observedWordFrequencies}/${wordFeatures.length} 빈도 연결</td><td>빈도 효과 통제·파일럿 난이도 분석 대기</td></tr>
+    <tr><td>A 비단어</td><td>공식 40,000 어휘 충돌 없음·실제단어 짝맞춤·철자 음절 bigram</td><td>기본조건 ${nonwordAudits.length}/${nonwordAudits.length} 통과</td><td>철자 대리지표 ${nonwordProxy}개 · 발음 말뭉치 확률 대기 ${nonwordPending || nonwordProxy}개</td></tr>
+    <tr><td>B 45초</td><td>${esc(original.wordEfficiencyForm?.formId || '미실시')} · 5×12 전체 가시성·창 이탈·실측시간</td><td>${timedPresentation ? (timedPresentation.valid ? '유효' : '무효') : '미실시'}</td><td>연령 규준·위치효과 파일럿 대기</td></tr>
+    <tr><td>C·D 선택형</td><td>지문 길이·어휘등급 가용률·문법 표지·정답/선택지 단서</td><td>${sectionAudits.length ? `${sectionAudits.length}개 절 감사` : '미실시'}</td><td>자동 검토 표시 ${flaggedChoiceItems.length}문항 · 타당도 판정 아님</td></tr>
+    <tr><td>엔진</td><td>${esc(window.ReadingEvidenceEngine?.VERSION || 'legacy')}</td><td>재현 가능</td><td>공개자료 기반 사전필터</td></tr>
+  </tbody></table></div><p class="quiet">자동 감사의 통과는 표준화·규준·진단타당도 통과를 뜻하지 않습니다. 실패·대기 표시는 다음 문항 수정과 파일럿 분석의 우선순위입니다.</p>`);
   add('핵심 요약', `
     <div class="overall">${overallStatement(d, f, session, scope).map(line => `<p>${esc(line)}</p>`).join('') || '<p>자동 채점된 응답이 아직 없습니다.</p>'}</div>
     <ul class="summary-list">${filterLines(summarySentences(d, f)).map(line => `<li>${esc(line)}</li>`).join('')}</ul>
@@ -641,24 +755,26 @@ function drawReport(original, scope = 'all') {
     const svr = svrFinding(d, c);
     add('선택형 하위검사 결과 (녹음 없음)', `${choiceTableHtml(c, choiceModules)}${findingsHtml([...choiceModules.flatMap(module => choiceFindings(c, module)), ...(svr ? [svr] : [])], '분석 · 선택형 하위검사')}`);
   }
+  if (full && session.supportExperiment?.trials?.length) add('지원 반응 · L0/L1/L2', supportExperimentHtml(session));
   add('오류 프로파일', `
     <div class="report-grid ${showD && showF ? 'two' : 'one'}">${showD ? decodingErrors : ''}${showF ? fluencyErrors : ''}</div>
     ${showF ? f.done.map(passage => `<h4>오류 지도 · ${esc(passage.response.stimulusId)} ${esc(passage.response.kind)}</h4><div class="passage-map static">${passageMapHtml(passage.tokens, { marks: passage.final.marks || {}, lastIndex: passage.final.lastIndex, sixtyIndex: passage.final.sixtyIndex }, { interactive: false })}</div>`).join('') : ''}
     ${showF ? '<p class="quiet">범례: 노란 물결 밑줄 대치(작은 글씨는 실제로 읽은 말) · 빨간 취소선 생략 · 보라 도움 제공 · 회색 판정 보류 · R 반복 · SC 자기수정 · 오른쪽 파란 선 삽입 · 왼쪽 점선 긴 멈춤</p>' : ''}
     ${findingsHtml([...(showD ? dFind.filter(item => ['오류가 난 자리', '자기수정'].includes(item.title)) : []), ...(showF ? fFind.filter(item => ['어절 안의 오류 위치', '오류 구성'].includes(item.title)) : []), ...(showF && rs.rule.n && rs.plain.n ? [ruleFinding(rs)] : [])], '분석 · 오류 양상')}`);
   add('수행 효율', `
+    ${showF ? wordEfficiencyTable : ''}
     <div class="report-grid ${showD && showF ? 'two' : 'one'}">${showD ? latency : ''}${showF ? fluencyTable : ''}</div>
     ${findingsHtml([...(showD ? dFind.filter(item => item.title === '반응 시작 시간') : []), ...(showF ? fFind.filter(item => ['정확도와 속도', '첫 60초와 전체'].includes(item.title)) : [])], '분석 · 수행 효율')}`);
   add('근거 추적', `
     <p class="quiet">모든 점수는 문항 → 음성인식 결과 → 오류 위치 → 원음성으로 거꾸로 따라갈 수 있습니다. 원음성은 연구용 검증 화면에서 재생·내려받기 할 수 있습니다.</p>
     ${showD ? `<div class="table-wrap"><table class="item-table"><thead><tr><th>문항</th><th>표기 [허용 발음]</th><th>음성인식</th><th>판정</th><th>오류 위치</th><th>반응 시작</th><th>원음성</th><th>상태</th></tr></thead><tbody>${itemRows}</tbody></table></div>` : ''}
     ${showF ? `<div class="table-wrap spaced"><table class="item-table"><thead><tr><th>지문</th><th>종류</th><th>정확 어절</th><th>기록된 사건</th><th>원음성</th><th>상태</th></tr></thead><tbody>${fluencyRows}</tbody></table></div>` : ''}
-    <h4>자동 채점 검증</h4>${hasVerify ? `<div class="table-wrap"><table class="item-table"><thead><tr><th>비교</th><th>표본</th><th>일치율</th><th>Cohen's κ</th></tr></thead><tbody>${verifyRows}</tbody></table></div>${findingsHtml(reliabilityScoped, '분석 · 자동 채점 정확도')}` : '<p class="quiet">이 기록에는 사람 검증 자료가 없습니다. 자동 채점의 정확도는 연구 단계에서 일부 녹음을 전문가가 채점해 일치율·κ로 따로 검증합니다(연구용 검증 화면).</p>'}`);
+    <h4>자동 채점 검증</h4>${hasVerify ? `<div class="report-grid four"><div><small>사람 전사 비교</small><b>${benchmark.n}개</b></div><div><small>문자 오류율 CER</small><b>${benchmark.cer ?? '–'}%</b></div><div><small>어절 오류율 WER</small><b>${benchmark.wer ?? '–'}%</b></div><div><small>실시간 계수 RTF</small><b>${benchmark.realTimeFactor ?? '–'}</b></div></div><div class="table-wrap spaced"><table class="item-table"><thead><tr><th>비교</th><th>표본</th><th>일치율</th><th>Cohen's κ</th></tr></thead><tbody>${verifyRows}</tbody></table></div>${findingsHtml(reliabilityScoped, '분석 · 자동 채점 정확도')}` : '<p class="quiet">이 기록에는 사람 검증 자료가 없습니다. 연구용 검증 화면에서 사람 전사·판정을 입력하면 CER, WER, RTF, 일치율과 κ가 자동 계산됩니다.</p>'}`);
   add('규준 위치 *', `
     <div class="report-grid three"><div><small>표준점수</small><b>${blank}</b></div><div><small>백분위</small><b>${blank}</b></div><div><small>필요 지원 수준</small><b>${blank}</b></div></div>
     <p class="quiet">대표 표본 규준과 신뢰도·타당도 자료가 없어 제공하지 않습니다.</p>`, 'muted-layer');
   if (full) add('변화 추적 *', `<p>${blank}</p><p class="quiet">동형 검사 또는 공통 척도와 측정의 표준오차(SEM)가 확보된 뒤 재검사 변화를 보고합니다.</p>`, 'muted-layer');
-  add('다음 단계 안내', `${nextStepHtml(session, d, f, showD, showF)}${full && choiceModules.length ? choiceNextStep(c, choiceModules) : ''}${paired && c.modules[paired] ? choiceNextStep(c, [paired]) : ''}`);
+  add('다음 단계 안내', `${nextStepHtml(session, d, f, showD, showF)}${full && choiceModules.some(module => c.modulesCore[module]) ? choiceNextStep(c, choiceModules) : ''}${paired && c.modulesCore[paired] ? choiceNextStep(c, [paired]) : ''}`);
   add('이 결과의 한계', `
     <ul class="summary-list limits">
       <li><b>음성인식 정확도:</b> 점수는 ${esc(session.sttModelLabel || '기기 안 Whisper')} 음성인식 결과로 자동 채점했습니다. 음성인식은 비단어를 비슷한 실제 단어로 바꿔 듣거나, 아동 음성·사투리·잡음에서 틀릴 수 있어 실제보다 오류가 많거나 적게 잡힐 수 있습니다. 이는 측정 도구의 한계이며, 자동 채점과 전문가 채점의 일치도는 파일럿에서 따로 검증합니다(${REFS.asr}).</li>
@@ -675,7 +791,7 @@ function drawReport(original, scope = 'all') {
   $('#report-content').innerHTML = `
   <header class="report-head">
     <div><p class="eyebrow">디지털 읽기 평가 · 자동 채점 · 표준화 전 연구판</p><h2>${title}</h2><p class="quiet">${subtitle}</p></div>
-    <dl class="report-id"><div><dt>참여자</dt><dd>${esc(session.participant)}${session.demo ? ' (예시 자료)' : ''}</dd></div><div><dt>연령 구간</dt><dd>${esc(session.ageBand)}</dd></div><div><dt>검사일</dt><dd>${date}</dd></div><div><dt>상태</dt><dd>${esc(({ SCORED: '자동 채점 완료', ANALYZING: '분석 중', IN_PROGRESS: '검사 중', INTERRUPTED: '중단됨' })[session.status] || session.status)}</dd></div></dl>
+    <dl class="report-id"><div><dt>참여자</dt><dd>${esc(session.participant)}${session.demo ? ' (예시 자료)' : ''}</dd></div><div><dt>연령 구간</dt><dd>${esc(session.ageBand)}</dd></div><div><dt>검사일</dt><dd>${date}</dd></div><div><dt>상태</dt><dd>${esc(({ SCORED: '자동 채점 완료', REVIEW_PENDING: '녹음 분석 전', ANALYZING: '분석 중', IN_PROGRESS: '검사 중', INTERRUPTED: '중단됨' })[session.status] || session.status)}</dd></div></dl>
   </header>
   ${session.demo ? '<p class="notice warning">이 결과지는 화면 시연용 예시 채점값으로 만든 것이며 실제 참여자 자료가 아닙니다.</p>' : ''}
   ${session.pendingCount ? `<p class="notice warning"><b>분석 전 응답 ${session.pendingCount}개:</b> 아직 자동 채점하지 않은 녹음이 있습니다. <button class="secondary compact-button" id="report-run-auto" type="button">지금 자동 채점</button> <span id="report-auto-status" class="quiet"></span></p>` : ''}

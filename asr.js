@@ -4,14 +4,14 @@
 const LIBRARY = '@huggingface/transformers@3.8.1';
 const LIBRARY_URL = `https://cdn.jsdelivr.net/npm/${LIBRARY}`;
 
-// 모델 선택 (Radford et al., 2023, Whisper):
-// 1) WebGPU가 있으면 Whisper large-v3-turbo. large-v3의 디코더를 4층으로 줄인 2024년 공개 모델로, 다국어 정확도는 large-v3에 가깝고 속도는 훨씬 빠르다.
-//    4비트 양자화 가중치로 약 0.6~0.8GB를 한 번 내려받는다.
-// 2) WebGPU가 없으면 CPU(WASM)에서 실행 가능한 Whisper small(8비트, 약 0.25GB).
-// 3) 그래도 실패하면 Whisper base.
+// 모델 선택:
+// - 기본은 multilingual Whisper small. 참여자 화면에서는 절대 자동 로드하지 않고 연구자가 분석을 요청할 때만 받는다.
+// - 연구자가 localStorage readingAsrProfile="accuracy"를 명시한 경우에만 large-v3-turbo를 먼저 시도한다.
+// - WebGPU가 없으면 small/base WASM으로 내린다. 모델 선택은 임상적 타당화 결과가 아니라 성능 검증 후보다.
 // 단어 시각은 교차 어텐션 정렬 헤드가 들어 있는 _timestamped 모델에서만 나온다.
 const MODELS = {
   turbo: { id: 'onnx-community/whisper-large-v3-turbo_timestamped', label: 'Whisper large-v3-turbo', mode: 'word', device: 'webgpu' },
+  smallGpu: { id: 'onnx-community/whisper-small_timestamped', label: 'Whisper small', mode: 'word', device: 'webgpu' },
   small: { id: 'onnx-community/whisper-small_timestamped', label: 'Whisper small', mode: 'word', device: 'wasm', dtype: 'q8' },
   base: { id: 'onnx-community/whisper-base_timestamped', label: 'Whisper base', mode: 'word', device: 'wasm', dtype: 'q8' }
 };
@@ -28,7 +28,9 @@ async function webgpuInfo() {
 
 export async function plan() {
   const gpu = await webgpuInfo();
-  return gpu.ok ? [{ ...MODELS.turbo, dtype: gpu.f16 ? { encoder_model: 'q4f16', decoder_model_merged: 'q4f16' } : { encoder_model: 'q4', decoder_model_merged: 'q4' } }, MODELS.small, MODELS.base] : [MODELS.small, MODELS.base];
+  const dtype = gpu.f16 ? { encoder_model: 'q4f16', decoder_model_merged: 'q4f16' } : { encoder_model: 'q4', decoder_model_merged: 'q4' };
+  const accuracyMode = globalThis.localStorage?.getItem?.('readingAsrProfile') === 'accuracy';
+  return gpu.ok ? [...(accuracyMode ? [{ ...MODELS.turbo, dtype }] : []), { ...MODELS.smallGpu, dtype }, MODELS.small, MODELS.base] : [MODELS.small, MODELS.base];
 }
 
 export function status() { return loaded ? { ready: true, model: loaded.model } : { ready: false, loading: Boolean(loading) }; }

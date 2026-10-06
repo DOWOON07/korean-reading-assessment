@@ -425,7 +425,7 @@
     version: 'screening-rule-0.2-provisional',
     wordMinAccuracy: 100,          // 선별 단어 하나라도 틀리면 A(단어 해독 세부검사)
     sentenceMinAccuracy: 95,       // 문장 낭독 어절 정확도 95% 미만이면 A와 B 모두
-    sentenceMinRate: { 아동: 120, 청소년: 200, 성인: 250 } // 분당 정확 음절. 임시값, 연령 규준 아님
+    sentenceMinRate: null // 연령 규준 전에는 속도로 자동 분기하지 않는다. 값은 기술 통계로만 저장한다.
   };
 
   function screeningDecision({ words = [], sentence = null, ageBand = '성인' } = {}, config = SCREENING_CONFIG) {
@@ -441,9 +441,9 @@
       sentenceAcc = pct(sentence.correctEojeol, sentence.attemptedEojeol);
       sentenceRate = sentence.seconds > 0 ? Math.round(sentence.correctSyllables / sentence.seconds * 60 * 10) / 10 : null;
     }
-    const rateFloor = config.sentenceMinRate[ageBand] ?? config.sentenceMinRate['성인'];
+    const rateFloor = Number.isFinite(config.sentenceMinRate) ? config.sentenceMinRate : null;
     const accurate = sentenceAcc == null || sentenceAcc >= config.sentenceMinAccuracy;
-    const slow = sentenceRate != null && sentenceRate < rateFloor;
+    const slow = rateFloor != null && sentenceRate != null && sentenceRate < rateFloor;
 
     const flags = { A: [], B: [] };
     const focus = [];

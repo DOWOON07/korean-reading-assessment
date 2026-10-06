@@ -1,8 +1,8 @@
 // 음성인식 없이 실시하는 선택형 하위검사 (브리핑 v1.2 경로 A~D의 나머지 하위검사).
 // 참여자가 화면을 보고(필요하면 합성 음성으로 듣고) 보기를 누르면 바로 정오와 반응 시간이 저장된다.
 // 과제 형식은 공인 검사의 형식을 따르고(근거: docs/DESIGN_EVIDENCE_KO.md 9장), 문항은 이 연구에서 새로 만든 후보 문항이다.
-// 문항은 쉬운 것부터 어려운 것 순서이며, demo: true인 문항이 데모 분량이다. 전문가 검토·예비검사 전이다.
-const BATTERY_VERSION = 'battery-items-0.1';
+// 문항은 쉬운 것부터 어려운 것 순서이며, demo: true인 문항이 데모 분량이다. 문헌·공개자료 기반 자동감사 후, 예비검사 전 후보이다.
+const BATTERY_VERSION = 'battery-items-0.3';
 
 const CHOICE_MODULES = {
   phonology: {
@@ -42,11 +42,11 @@ const CHOICE_MODULES = {
     ]
   },
   silent: {
-    title: '단어 재인·묵독 효율', path: 'B', minutes: { demo: 3, full: 5 },
+    title: '디지털 읽기 연구 확장', path: 'B', role: 'research-extension', standardizedInKorean: false, minutes: { demo: 3, full: 5 },
     sections: [
       {
         // ROAR 단어 재인(어휘판단) 형식 (Yeatman 외, 2021; ROAR 기술 매뉴얼): 글자열을 350ms 보여 주고 실제 낱말인지 판단. 응답 시간 제한 없음. 정확도·d′와 반응 시간을 함께 본다.
-        id: 'B-lexical', subtest: 'B-lexical', title: '단어 재인 (진짜 낱말 찾기)', format: 'binary', exposureMs: 350,
+        id: 'B-lexical', subtest: 'B-lexical', title: '단어·비단어 판단 (연구 확장)', role: 'research-extension', format: 'binary', exposureMs: 350,
         binary: [{ value: 'word', label: '진짜 낱말', key: 'F' }, { value: 'nonword', label: '없는 낱말', key: 'J' }],
         instruction: '화면에 나오는 글자가 진짜 있는 낱말이면 “진짜 낱말”(F키), 없는 낱말이면 “없는 낱말”(J키)을 최대한 빠르고 정확하게 누르세요. 소리 내어 읽지 않아도 됩니다.',
         practice: [{ id: 'BL-P1', text: '가방', answer: 'word', type: '실제단어' }, { id: 'BL-P2', text: '도무', answer: 'nonword', type: '비단어' }],
@@ -79,7 +79,7 @@ const CHOICE_MODULES = {
       },
       {
         // TOSREC 형식: 짧은 문장을 소리 내지 않고 읽고 맞는지 판단, 제한 시간 안의 (정답 - 오답)이 효율 점수.
-        id: 'B-silent', subtest: 'B-silent', title: '묵독 효율 (문장 참·거짓)', format: 'binary', timeLimitSec: { demo: 90, full: 180 },
+        id: 'B-silent', subtest: 'B-silent', title: '문장 참·거짓 묵독 (연구 확장)', role: 'research-extension', format: 'binary', timeLimitSec: { demo: 90, full: 180 },
         binary: [{ value: 'true', label: '맞아요 ⭕', key: 'F' }, { value: 'false', label: '틀려요 ❌', key: 'J' }],
         instruction: '문장을 소리 내지 않고 읽고, 내용이 맞으면 “맞아요”(F키), 틀리면 “틀려요”(J키)를 누르세요. 제한 시간 안에 최대한 많이, 정확하게 푸세요. 다 풀지 못해도 괜찮아요.',
         practice: [{ id: 'BS-P1', text: '공은 둥글다.', answer: 'true', type: '연습' }, { id: 'BS-P2', text: '개는 하늘을 난다.', answer: 'false', type: '연습' }],
@@ -144,18 +144,19 @@ const CHOICE_MODULES = {
         ]
       },
       {
-        id: 'C-morph', subtest: 'C-morph', title: '형태소 인식',
-        instruction: '낱말 속의 같은 글자가 같은 뜻으로 쓰였는지 생각하며 답하세요.',
-        practice: [{ id: 'CM-P1', type: '고유어 형태소', stem: '“밤”의 뜻이 다른 하나는?', options: ['밤송이', '밤하늘', '밤길', '밤새'], answer: '밤송이' }],
+        id: 'C-morph', subtest: 'C-morph', title: '낱말 구조 알기 (심화 연구 확장)', role: 'research-extension',
+        blueprintVersion: 'morphology-blueprint-0.2',
+        instruction: '두 부분을 합쳐 낱말을 만들거나, 낱말을 뜻이 있는 두 부분으로 나누어 보세요.',
+        practice: [{ id: 'CM-P1', type: '합성어 결합', stem: '“돌로 만든 다리”를 한 낱말로 합치면?', options: ['돌다리', '돌멩이', '징검다리', '고가도로'], answer: '돌다리' }],
         items: [
-          { id: 'CM-01', type: '고유어 형태소', stem: '“눈”의 뜻이 다른 하나는?', options: ['눈물', '눈사람', '눈썰매', '눈보라'], answer: '눈물', demo: true },
-          { id: 'CM-02', type: '고유어 형태소', stem: '“먹”의 뜻이 다른 하나는?', options: ['먹물', '먹이', '먹보', '먹성'], answer: '먹물' },
-          { id: 'CM-03', type: '고유어 형태소', stem: '“손”의 뜻이 다른 하나는?', options: ['손님', '손목', '손등', '손톱'], answer: '손님', demo: true },
-          { id: 'CM-04', type: '접사', stem: '“-개”가 ‘무엇을 하는 도구’라는 뜻이 아닌 것은?', options: ['무지개', '지우개', '덮개', '베개'], answer: '무지개' },
-          { id: 'CM-05', type: '접사', stem: '“-질”이 ‘어떤 행동을 함’이라는 뜻이 아닌 것은?', options: ['질문', '가위질', '걸레질', '바느질'], answer: '질문' },
-          { id: 'CM-06', type: '한자어 형태소', stem: '“소방관”의 “관”과 같은 뜻으로 쓰인 것은?', options: ['경찰관', '도서관', '영화관', '체육관'], answer: '경찰관', demo: true },
-          { id: 'CM-07', type: '한자어 형태소', stem: '“불가능”의 “불”과 같은 뜻으로 쓰인 것은?', options: ['불공평', '불꽃', '불고기', '불빛'], answer: '불공평', demo: true },
-          { id: 'CM-08', type: '접두사', stem: '“풋-”이 ‘덜 익은, 처음 나온’이라는 뜻이 아닌 것은?', options: ['풋볼', '풋사과', '풋고추', '풋내기'], answer: '풋볼' }
+          { id: 'CM-01', type: '합성어 결합', stem: '“손을 닦는 수건”을 한 낱말로 합치면?', options: ['손수건', '세숫비누', '손잡이', '수건걸이'], answer: '손수건', demo: true },
+          { id: 'CM-02', type: '합성어 결합', stem: '“꽃이 자라는 밭”을 한 낱말로 합치면?', options: ['꽃밭', '화분', '꽃다발', '텃밭'], answer: '꽃밭' },
+          { id: 'CM-03', type: '합성어 분해', stem: '“밤길”을 뜻이 있는 두 낱말로 바르게 나누면?', options: ['밤 + 길', '밤길 + 이', '바 + ㅁ길', '밤 + 기'], answer: '밤 + 길', demo: true },
+          { id: 'CM-04', type: '합성어 분해', stem: '“눈사람”을 뜻이 있는 두 낱말로 바르게 나누면?', options: ['눈 + 사람', '눈사 + 람', '누 + 사람', '눈사람 + 이'], answer: '눈 + 사람' },
+          { id: 'CM-05', type: '파생어 결합', stem: '‘덜 익은’ 뜻의 “풋-”과 “사과”를 합치면?', options: ['풋사과', '풋내기', '햇사과', '사과밭'], answer: '풋사과', demo: true },
+          { id: 'CM-06', type: '파생어 결합', stem: '‘보람이나 실속이 없는’ 뜻의 “헛-”과 “웃음”을 합치면?', options: ['헛웃음', '큰웃음', '웃음꽃', '웃음소리'], answer: '헛웃음' },
+          { id: 'CM-07', type: '파생어 분해', stem: '“덮개”를 바르게 나누면?', options: ['덮다 + -개', '덮 + 개다', '덮개 + -다', '덥다 + -게'], answer: '덮다 + -개', demo: true },
+          { id: 'CM-08', type: '파생어 분해', stem: '“지우개”를 바르게 나누면?', options: ['지우다 + -개', '지우 + 개다', '지우개 + -다', '지다 + 우개'], answer: '지우다 + -개' }
         ]
       }
     ]
@@ -171,7 +172,7 @@ const CHOICE_MODULES = {
           { id: 'D1-01', subtest: 'D-fact', type: '사실', stem: '꿀벌이 꽃에서 모으는 것은?', options: ['꽃가루와 꿀', '물과 흙', '씨앗과 잎', '열매와 줄기'], answer: '꽃가루와 꿀', demo: true },
           { id: 'D1-02', subtest: 'D-fact', type: '사실', stem: '과학자들이 꼽은 꿀벌 감소의 주요 원인은?', options: ['농약 사용과 기후 변화', '꽃이 너무 많아짐', '사과를 많이 심음', '꿀을 많이 먹음'], answer: '농약 사용과 기후 변화' },
           { id: 'D1-03', subtest: 'D-infer', type: '추론', stem: '꿀벌이 계속 줄어든다면 일어날 수 있는 일은?', options: ['사과 같은 열매를 얻기 어려워진다', '꽃이 더 많이 핀다', '비가 더 자주 온다', '농약이 필요 없어진다'], answer: '사과 같은 열매를 얻기 어려워진다', demo: true },
-          { id: 'D1-04', subtest: 'D-eval', type: '평가', stem: '이 글을 쓴 목적으로 가장 알맞은 것은?', options: ['꿀벌의 역할과 위기를 알리려고', '꿀을 팔려고', '꿀벌을 무서워하게 하려고', '사과 기르는 법을 가르치려고'], answer: '꿀벌의 역할과 위기를 알리려고', demo: true }
+          { id: 'D1-04', subtest: 'D-eval', role: 'research-extension', type: '평가', stem: '이 글을 쓴 목적으로 가장 알맞은 것은?', options: ['꿀벌의 역할과 위기를 알리려고', '꿀을 팔려고', '꿀벌을 무서워하게 하려고', '사과 기르는 법을 가르치려고'], answer: '꿀벌의 역할과 위기를 알리려고', demo: true }
         ]
       },
       {
@@ -182,7 +183,7 @@ const CHOICE_MODULES = {
           { id: 'D2-01', subtest: 'D-fact', type: '사실', stem: '서윤이가 고양이를 감싼 것은?', options: ['겉옷', '수건', '우산', '가방'], answer: '겉옷' },
           { id: 'D2-02', subtest: 'D-infer', type: '추론', stem: '서윤이가 고양이를 집에 데려가지 않은 까닭은?', options: ['엄마가 고양이 털 때문에 기침을 해서', '고양이가 싫어서', '비가 다시 와서', '집이 멀어서'], answer: '엄마가 고양이 털 때문에 기침을 해서' },
           { id: 'D2-03', subtest: 'D-infer', type: '추론', stem: '의사 선생님의 말로 보아 서윤이의 행동은?', options: ['고양이에게 도움이 되었다', '고양이를 아프게 했다', '쓸데없는 일이었다', '위험한 일이었다'], answer: '고양이에게 도움이 되었다' },
-          { id: 'D2-04', subtest: 'D-eval', type: '평가', stem: '서윤이에 대한 평가로 가장 알맞은 것은?', options: ['어려운 상황에서도 책임감 있게 행동했다', '엄마 말을 듣지 않았다', '고양이를 무서워했다', '친구를 기다리기만 했다'], answer: '어려운 상황에서도 책임감 있게 행동했다' }
+          { id: 'D2-04', subtest: 'D-eval', role: 'research-extension', type: '평가', stem: '서윤이에 대한 평가로 가장 알맞은 것은?', options: ['어려운 상황에서도 책임감 있게 행동했다', '엄마 말을 듣지 않았다', '고양이를 무서워했다', '친구를 기다리기만 했다'], answer: '어려운 상황에서도 책임감 있게 행동했다' }
         ]
       },
       {
@@ -190,20 +191,34 @@ const CHOICE_MODULES = {
         passage: '[글 가] 개인 블로그 (2019년)\n아침밥을 거르면 무조건 살이 찐대요! 제 친구도 아침을 안 먹더니 살이 쪘어요.\n\n[글 나] 보건 기관 안내문 (2024년)\n아침 식사와 체중의 관계는 연구마다 결과가 다르다. 아침을 먹는지보다 하루 전체의 식사량과 식사의 질이 더 중요하다는 연구가 많다.',
         instruction: '두 글을 읽고 질문에 답하세요.',
         items: [
-          { id: 'D3-01', subtest: 'D-multi', type: '출처 평가', stem: '두 글 중 더 믿을 만한 글과 그 까닭은?', options: ['글 나: 기관이 여러 연구를 근거로 썼다', '글 가: 친구의 실제 경험이다', '글 가: 더 짧고 분명하다', '두 글의 믿을 만한 정도가 같다'], answer: '글 나: 기관이 여러 연구를 근거로 썼다', demo: true },
-          { id: 'D3-02', subtest: 'D-multi', type: '주장 평가', stem: '글 가의 주장에서 문제가 되는 점은?', options: ['한 사람의 사례로 모두가 그렇다고 단정했다', '아침밥 이야기를 했다', '날짜를 밝혔다', '높임말을 썼다'], answer: '한 사람의 사례로 모두가 그렇다고 단정했다', demo: true },
-          { id: 'D3-03', subtest: 'D-multi', type: '정보 통합', stem: '두 글을 종합한 결론으로 가장 알맞은 것은?', options: ['아침 식사만으로 체중 변화를 단정하기 어렵다', '아침을 먹으면 반드시 살이 빠진다', '아침을 거르면 반드시 살이 찐다', '체중은 식사와 관계가 없다'], answer: '아침 식사만으로 체중 변화를 단정하기 어렵다' }
+          { id: 'D3-01', subtest: 'D-multi', role: 'research-extension', type: '출처 평가', stem: '두 글 중 더 믿을 만한 글과 그 까닭은?', options: ['글 나: 기관이 여러 연구를 근거로 썼다', '글 가: 친구의 실제 경험이다', '글 가: 더 짧고 분명하다', '두 글의 믿을 만한 정도가 같다'], answer: '글 나: 기관이 여러 연구를 근거로 썼다', demo: true },
+          { id: 'D3-02', subtest: 'D-multi', role: 'research-extension', type: '주장 평가', stem: '글 가의 주장에서 문제가 되는 점은?', options: ['한 사람의 사례로 모두가 그렇다고 단정했다', '아침밥 이야기를 했다', '날짜를 밝혔다', '높임말을 썼다'], answer: '한 사람의 사례로 모두가 그렇다고 단정했다', demo: true },
+          { id: 'D3-03', subtest: 'D-multi', role: 'research-extension', type: '정보 통합', stem: '두 글을 종합한 결론으로 가장 알맞은 것은?', options: ['아침 식사만으로 체중 변화를 단정하기 어렵다', '아침을 먹으면 반드시 살이 빠진다', '아침을 거르면 반드시 살이 찐다', '체중은 식사와 관계가 없다'], answer: '아침 식사만으로 체중 변화를 단정하기 어렵다' }
         ]
       }
     ]
   }
 };
 
+// 지문 길이·어휘등급 가용률·문법 표지와 선택지 단서를 자동 감사한다.
+// 이 값은 문항을 자동 확정하지 않고, 검토가 필요한 항목을 표시하는 사전필터다.
+const BATTERY_EVIDENCE_ENGINE = globalThis.ReadingEvidenceEngine;
+const BATTERY_ITEM_BANK = globalThis.ReadingItemBank;
+const CHOICE_EVIDENCE_AUDITS = {};
+if (BATTERY_EVIDENCE_ENGINE && BATTERY_ITEM_BANK) {
+  for (const module of Object.values(CHOICE_MODULES)) for (const section of module.sections) {
+    section.vocabularyGradeLookup = BATTERY_ITEM_BANK.VOCABULARY_GRADE_LOOKUP;
+    section.evidenceAudit = BATTERY_EVIDENCE_ENGINE.choiceSectionAudit(section);
+    CHOICE_EVIDENCE_AUDITS[section.id] = section.evidenceAudit;
+    for (const item of [...(section.practice || []), ...section.items]) item.evidenceAudit = BATTERY_EVIDENCE_ENGINE.choiceItemAudit(item, section.passage || '');
+  }
+}
+
 // 하위검사 이름 (경로 카드·결과지 공통)
 const CHOICE_SUBTEST_TITLES = {
-  'A-phon': '음운인식', 'A-letter': '글자-소리 대응', 'B-lexical': '단어 자동성 (단어 재인)', 'B-silent': '묵독 효율(문장 참·거짓)',
-  'C-vocab': '어휘', 'C-sentence': '문장 이해', 'C-listen': '듣기 이해', 'C-morph': '형태소 인식',
-  'D-fact': '사실 이해', 'D-infer': '추론', 'D-eval': '평가·판단', 'D-multi': '복수 글 비교·출처 평가'
+  'A-phon': '음운인식', 'A-letter': '글자-소리 대응', 'B-lexical': '단어·비단어 판단 (연구 확장)', 'B-silent': '문장 참·거짓 묵독 (연구 확장)',
+  'C-vocab': '어휘', 'C-sentence': '문장 이해', 'C-listen': '듣기 이해', 'C-morph': '낱말 구조 알기 (연구 확장)',
+  'D-fact': '사실 이해', 'D-infer': '추론', 'D-eval': '평가·판단 (연구 확장)', 'D-multi': '복수 글 비교·출처 평가 (연구 확장)'
 };
 
 // 보기 순서: 모든 참여자에게 같은 순서(표준화)이되, 정답 위치가 고르게 퍼지도록 정한다.
